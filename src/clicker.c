@@ -379,9 +379,9 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
         case WM_INITDIALOG:
             SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
             CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
-            SetHotkey(dialog, VK_F6, 0);
+            SetHotkey(dialog, VK_F1, 0);
             ShowHotkey(dialog);
-            ShowRunState(dialog, hotkey.id ? L"就绪" : L"F6 不可用，请设置快捷键。");
+            ShowRunState(dialog, hotkey.id ? L"就绪" : L"F1 不可用，请设置快捷键。");
             return TRUE;
         case WM_COMMAND:
             if (LOWORD(wParam) == IDC_HOTKEY && HIWORD(wParam) == BN_CLICKED)

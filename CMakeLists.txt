@@ -94,8 +94,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
     # read-only section saves a file block. Keep the original resources until packing.
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
         # The shorter PE32 load configuration leaves more room for relocations and resources.
-        target_sources(PicoClicker PRIVATE src/compact_load_config32.c)
-        target_sources(PicoClickerLite PRIVATE src/compact_load_config32.c)
+        target_sources(PicoClicker PRIVATE src/compact_load_config.c)
+        target_sources(PicoClickerLite PRIVATE src/compact_load_config.c)
         target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
         target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")

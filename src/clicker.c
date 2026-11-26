@@ -60,6 +60,11 @@ static BOOL SetHotkey(HWND dialog, UINT key, UINT modifiers)
     return TRUE;
 }
 
+static WCHAR HexDigit(UINT digit)
+{
+    return (WCHAR)(digit + (digit < 10 ? L'0' : L'A' - 10));
+}
+
 static void ShowHotkey(HWND dialog)
 {
     if (!hotkey.id)
@@ -70,20 +75,33 @@ static void ShowHotkey(HWND dialog)
 
     WCHAR text[48];
     WCHAR *name = text;
-    if (hotkey.modifiers & MOD_CONTROL)
+    // The fixed labels fit in ASCII and share one widening loop.
+    static const struct
     {
-        lstrcpynW(name, L"Ctrl+", 6);
-        name += 5;
-    }
-    if (hotkey.modifiers & MOD_ALT)
+        BYTE bit;
+        char text[7];
+    } prefixes[] =
     {
-        lstrcpynW(name, L"Alt+", 5);
-        name += 4;
-    }
-    if (hotkey.modifiers & MOD_SHIFT)
+        {
+            MOD_CONTROL, "Ctrl+"
+        },
+        {
+            MOD_ALT, "Alt+"
+        },
+        {
+            MOD_SHIFT, "Shift+"
+        }
+    };
+    for (UINT i = 0; i < ARRAYSIZE(prefixes); ++i)
     {
-        lstrcpynW(name, L"Shift+", 7);
-        name += 6;
+        if (hotkey.modifiers & prefixes[i].bit)
+        {
+            const char *letter = prefixes[i].text;
+            while (*letter)
+            {
+                *name++ = (WCHAR)*letter++;
+            }
+        }
     }
 
     UINT scan = MapVirtualKeyW(hotkey.key, MAPVK_VK_TO_VSC_EX);
@@ -94,11 +112,10 @@ static void ShowHotkey(HWND dialog)
     }
     if (!GetKeyNameTextW(keyData, name, (int)(ARRAYSIZE(text) - (name - text))))
     {
-        static const WCHAR hex[] = L"0123456789ABCDEF";
         name[0] = L'0';
         name[1] = L'x';
-        name[2] = hex[(hotkey.key >> 4) & 15];
-        name[3] = hex[hotkey.key & 15];
+        name[2] = HexDigit((hotkey.key >> 4) & 15);
+        name[3] = HexDigit(hotkey.key & 15);
         name[4] = L'\0';
     }
     SetDlgItemTextW(dialog, IDC_HOTKEY, text);
@@ -122,6 +139,10 @@ enum
     TEMP_SUFFIX_LENGTH = 9
 };
 
+// Resolve the process's profile path once for both reading and replacing the record.
+static WCHAR hotkeyPath[MAX_PATH];
+static DWORD hotkeyPathLength;
+
 static DWORD GetHotkeyPath(WCHAR *path)
 {
     // Reserve space for the temporary suffix and reject unresolved or relative paths.
@@ -137,10 +158,10 @@ static DWORD GetHotkeyPath(WCHAR *path)
 
 static void RestoreHotkey(HWND dialog)
 {
-    WCHAR path[MAX_PATH];
-    if (GetHotkeyPath(path))
+    hotkeyPathLength = GetHotkeyPath(hotkeyPath);
+    if (hotkeyPathLength)
     {
-        HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
+        HANDLE file = CreateFileW(hotkeyPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
             NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (file != INVALID_HANDLE_VALUE)
         {
@@ -163,21 +184,29 @@ static void RestoreHotkey(HWND dialog)
 
 static BOOL SaveHotkey(void)
 {
-    WCHAR path[MAX_PATH];
-    DWORD length = GetHotkeyPath(path);
+    DWORD length = hotkeyPathLength;
     if (!length)
     {
         return FALSE;
     }
 
     WCHAR temporary[MAX_PATH];
-    lstrcpynW(temporary, path, (int)length + 1);
+    for (DWORD i = 0; i < length; ++i)
+    {
+        temporary[i] = hotkeyPath[i];
+    }
     temporary[length++] = L'.';
-    DWORD suffix = GetCurrentProcessId() ^ GetTickCount();
+    // The stack-cookie startup already imports this counter.
+    LARGE_INTEGER counter;
+    DWORD suffix = GetCurrentProcessId();
+    if (QueryPerformanceCounter(&counter))
+    {
+        suffix ^= counter.LowPart;
+    }
     for (int shift = 28; shift >= 0; shift -= 4)
     {
         UINT digit = (suffix >> shift) & 15;
-        temporary[length++] = (WCHAR)(digit + (digit < 10 ? L'0' : L'a' - 10));
+        temporary[length++] = HexDigit(digit);
     }
     temporary[length] = L'\0';
 
@@ -198,7 +227,7 @@ static BOOL SaveHotkey(void)
     BOOL closed = CloseHandle(file);
 
     // Replace only after a complete write, so a failed save preserves the previous record.
-    if (saved && closed && MoveFileExW(temporary, path, MOVEFILE_REPLACE_EXISTING))
+    if (saved && closed && MoveFileExW(temporary, hotkeyPath, MOVEFILE_REPLACE_EXISTING))
     {
         return TRUE;
     }
@@ -380,33 +409,23 @@ static UINT ReadInterval(HWND dialog)
 
 static void SelectClickPair(HWND dialog)
 {
-    static const DWORD flags[][2] =
-    {
-        {
-            MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP
-        },
-        {
-            MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP
-        },
-        {
-            MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP
-        }
-    };
-    UINT button = 0;
+    // The zero-initialized pair is mouse input and each release flag follows its press flag.
+    _Static_assert(INPUT_MOUSE == 0 && MOUSEEVENTF_LEFTUP == (MOUSEEVENTF_LEFTDOWN << 1) &&
+        MOUSEEVENTF_MIDDLEUP == (MOUSEEVENTF_MIDDLEDOWN << 1) &&
+        MOUSEEVENTF_RIGHTUP == (MOUSEEVENTF_RIGHTDOWN << 1), "Mouse button flags");
 
+    DWORD down = MOUSEEVENTF_LEFTDOWN;
     if (IsDlgButtonChecked(dialog, IDC_MIDDLE) == BST_CHECKED)
     {
-        button = 1;
+        down = MOUSEEVENTF_MIDDLEDOWN;
     }
     else if (IsDlgButtonChecked(dialog, IDC_RIGHT) == BST_CHECKED)
     {
-        button = 2;
+        down = MOUSEEVENTF_RIGHTDOWN;
     }
 
-    clickPair[0].type = INPUT_MOUSE;
-    clickPair[0].mi.dwFlags = flags[button][0];
-    clickPair[1].type = INPUT_MOUSE;
-    clickPair[1].mi.dwFlags = flags[button][1];
+    clickPair[0].mi.dwFlags = down;
+    clickPair[1].mi.dwFlags = down << 1;
 }
 
 static void Toggle(HWND dialog)

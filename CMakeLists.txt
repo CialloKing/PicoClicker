@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.29)
-project(PicoClicker VERSION 0.4.4 LANGUAGES C RC)
+project(PicoClicker VERSION 0.4.5 LANGUAGES C RC)
 
 if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "PicoClicker requires the Windows SDK and an MSVC-compatible compiler.")

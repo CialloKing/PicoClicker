@@ -7,6 +7,9 @@ static INPUT clickPair[2];
 static UINT runId;
 static BOOL running;
 
+#ifdef PICOCLICKER_LITE
+static PCWSTR idleStatus;
+#else
 static struct
 {
     UINT key;
@@ -21,20 +24,29 @@ static struct
     BOOL active;
     BOOL armed;
 } capture;
+#endif
 
 static void ShowRunState(HWND dialog, PCWSTR status)
 {
     // These IDs are contiguous so click settings can be locked as a group.
     for (int id = IDC_INTERVAL; id <= IDC_RIGHT; ++id)
     {
-        EnableWindow(GetDlgItem(dialog, id), !running && !capture.active);
+#ifdef PICOCLICKER_LITE
+        BOOL settingsEnabled = !running;
+#else
+        BOOL settingsEnabled = !running && !capture.active;
+#endif
+        EnableWindow(GetDlgItem(dialog, id), settingsEnabled);
     }
+#ifndef PICOCLICKER_LITE
     EnableWindow(GetDlgItem(dialog, IDC_HOTKEY), !running);
     EnableWindow(GetDlgItem(dialog, IDC_TOGGLE), hotkey.id && !capture.active);
+#endif
     SetDlgItemTextW(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
     SetDlgItemTextW(dialog, IDC_STATUS, status);
 }
 
+#ifndef PICOCLICKER_LITE
 static BOOL SetHotkey(HWND dialog, UINT key, UINT modifiers)
 {
     if (key == hotkey.key && modifiers == hotkey.modifiers)
@@ -370,6 +382,7 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
     }
     return TRUE;
 }
+#endif
 
 static void Stop(HWND dialog, PCWSTR status)
 {
@@ -432,13 +445,19 @@ static void Toggle(HWND dialog)
 {
     if (running)
     {
+#ifdef PICOCLICKER_LITE
+        Stop(dialog, idleStatus);
+#else
         Stop(dialog, L"就绪");
+#endif
         return;
     }
+#ifndef PICOCLICKER_LITE
     if (!hotkey.id || capture.active)
     {
         return;
     }
+#endif
 
     UINT interval = ReadInterval(dialog);
     if (interval == 0 || interval > 60000)
@@ -496,16 +515,24 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
         case WM_INITDIALOG:
             SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
             CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
+#ifdef PICOCLICKER_LITE
+            // Manual start and stop are still available when another app owns F1.
+            idleStatus = RegisterHotKey(dialog, ID_HOTKEY, MOD_NOREPEAT, VK_F1) ? L"F1 启停" : L"F1 不可用";
+            SetDlgItemTextW(dialog, IDC_STATUS, idleStatus);
+#else
             RestoreHotkey(dialog);
             ShowHotkey(dialog);
             ShowRunState(dialog, hotkey.id ? L"就绪" : L"F1 不可用，请设置快捷键。");
+#endif
             return TRUE;
         case WM_COMMAND:
+#ifndef PICOCLICKER_LITE
             if (LOWORD(wParam) == IDC_HOTKEY && HIWORD(wParam) == BN_CLICKED)
             {
                 ToggleCapture(dialog);
                 return TRUE;
             }
+#endif
             if (LOWORD(wParam) == IDC_TOGGLE && HIWORD(wParam) == BN_CLICKED)
             {
                 Toggle(dialog);
@@ -518,6 +545,14 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             break;
         case WM_HOTKEY:
+#ifdef PICOCLICKER_LITE
+            if (wParam == ID_HOTKEY && lParam == MAKELPARAM(0, VK_F1))
+            {
+                Toggle(dialog);
+                return TRUE;
+            }
+            break;
+#else
             if (hotkey.id && wParam == (WPARAM)hotkey.id &&
                 lParam == MAKELPARAM(hotkey.modifiers, hotkey.key))
             {
@@ -540,11 +575,15 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
                 return TRUE;
             }
             break;
+#endif
         case WM_CLOSE:
             Stop(dialog, NULL);
             DestroyWindow(dialog);
             return TRUE;
         case WM_DESTROY:
+#ifdef PICOCLICKER_LITE
+            UnregisterHotKey(dialog, ID_HOTKEY);
+#else
             if (capture.active)
             {
                 KillTimer(dialog, ID_CAPTURE_TIMER);
@@ -553,6 +592,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             {
                 UnregisterHotKey(dialog, hotkey.id);
             }
+#endif
             PostQuitMessage(0);
             return TRUE;
     }
@@ -594,7 +634,11 @@ static __declspec(noinline) int Run(HINSTANCE instance)
                 result = (int)message.wParam;
                 goto done;
             }
+#ifdef PICOCLICKER_LITE
+            if (!IsDialogMessageW(dialog, &message))
+#else
             if (!HandleCaptureKey(dialog, &message) && !IsDialogMessageW(dialog, &message))
+#endif
             {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);

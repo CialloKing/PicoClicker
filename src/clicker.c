@@ -111,6 +111,101 @@ static BOOL IsMainKey(UINT key)
         (key < VK_LSHIFT || key > VK_RMENU) && key != VK_PROCESSKEY && key != VK_PACKET;
 }
 
+static BOOL IsBindableHotkey(UINT key, UINT modifiers)
+{
+    return IsMainKey(key) && key != VK_ESCAPE && key != VK_F12 &&
+        !(modifiers & ~(MOD_ALT | MOD_CONTROL | MOD_SHIFT));
+}
+
+enum
+{
+    TEMP_SUFFIX_LENGTH = 9
+};
+
+static DWORD GetHotkeyPath(WCHAR *path)
+{
+    // Reserve space for the temporary suffix and reject unresolved or relative paths.
+    const DWORD capacity = MAX_PATH - TEMP_SUFFIX_LENGTH;
+    DWORD length = ExpandEnvironmentStringsW(L"%LOCALAPPDATA%\\PicoClicker.dat", path, capacity);
+    if (length < 4 || length > capacity || (UINT)(path[0] | 32) - L'a' >= 26 ||
+        path[1] != L':' || path[2] != L'\\')
+    {
+        return 0;
+    }
+    return length - 1;
+}
+
+static void RestoreHotkey(HWND dialog)
+{
+    WCHAR path[MAX_PATH];
+    if (GetHotkeyPath(path))
+    {
+        HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
+            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (file != INVALID_HANDLE_VALUE)
+        {
+            // Read one extra byte so an overlong file is rejected.
+            BYTE record[3];
+            DWORD received;
+            BOOL read = ReadFile(file, record, sizeof(record), &received, NULL);
+            CloseHandle(file);
+            if (read && received == 2 && IsBindableHotkey(record[0], record[1]) &&
+                SetHotkey(dialog, record[0], record[1]))
+            {
+                return;
+            }
+        }
+    }
+
+    // A fallback is only for this session; the stored choice may be available next time.
+    SetHotkey(dialog, VK_F1, 0);
+}
+
+static BOOL SaveHotkey(void)
+{
+    WCHAR path[MAX_PATH];
+    DWORD length = GetHotkeyPath(path);
+    if (!length)
+    {
+        return FALSE;
+    }
+
+    WCHAR temporary[MAX_PATH];
+    lstrcpynW(temporary, path, (int)length + 1);
+    temporary[length++] = L'.';
+    DWORD suffix = GetCurrentProcessId() ^ GetTickCount();
+    for (int shift = 28; shift >= 0; shift -= 4)
+    {
+        UINT digit = (suffix >> shift) & 15;
+        temporary[length++] = (WCHAR)(digit + (digit < 10 ? L'0' : L'a' - 10));
+    }
+    temporary[length] = L'\0';
+
+    HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, NULL,
+        CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        return FALSE;
+    }
+
+    BYTE record[2] =
+    {
+        (BYTE)hotkey.key,
+        (BYTE)hotkey.modifiers
+    };
+    DWORD written;
+    BOOL saved = WriteFile(file, record, sizeof(record), &written, NULL) && written == sizeof(record);
+    BOOL closed = CloseHandle(file);
+
+    // Replace only after a complete write, so a failed save preserves the previous record.
+    if (saved && closed && MoveFileExW(temporary, path, MOVEFILE_REPLACE_EXISTING))
+    {
+        return TRUE;
+    }
+    DeleteFileW(temporary);
+    return FALSE;
+}
+
 static UINT PressedMainKey(void)
 {
     for (UINT key = VK_BACK; key <= 0xfe; ++key)
@@ -153,14 +248,17 @@ static void FinishCapture(HWND dialog, UINT key)
     PCWSTR status = hotkey.id ? L"就绪" : L"请选择可用的快捷键。";
     if (key && key != VK_ESCAPE)
     {
-        if (key == VK_F12 || (capture.modifiers & MOD_WIN))
+        if (!IsBindableHotkey(key, capture.modifiers))
         {
             status = L"这个快捷键由系统保留。";
         }
+        else if (SetHotkey(dialog, key, capture.modifiers))
+        {
+            status = SaveHotkey() ? L"快捷键已设置。" : L"快捷键已生效，保存失败。";
+        }
         else
         {
-            status = SetHotkey(dialog, key, capture.modifiers) ?
-                L"快捷键已设置。" : L"快捷键不可用，已保留原设置。";
+            status = L"快捷键不可用，已保留原设置。";
         }
     }
     ShowHotkey(dialog);
@@ -379,7 +477,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
         case WM_INITDIALOG:
             SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
             CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
-            SetHotkey(dialog, VK_F1, 0);
+            RestoreHotkey(dialog);
             ShowHotkey(dialog);
             ShowRunState(dialog, hotkey.id ? L"就绪" : L"F1 不可用，请设置快捷键。");
             return TRUE;

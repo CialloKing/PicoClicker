@@ -91,8 +91,9 @@ endforeach()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
     CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
-    # The shorter load configuration leaves room for the standard edition's relocations.
+    # The shorter PE32 load configuration leaves more room for relocations and resources.
     target_sources(PicoClicker PRIVATE src/compact_load_config32.c)
+    target_sources(PicoClickerLite PRIVATE src/compact_load_config32.c)
 endif()
 
 # The same definition controls both the code and the compiled dialog.

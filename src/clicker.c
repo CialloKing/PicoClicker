@@ -196,7 +196,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
     return FALSE;
 }
 
-static int Run(HINSTANCE instance)
+static __declspec(noinline) int Run(HINSTANCE instance)
 {
     HWND dialog = CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_MAIN), NULL, DialogProc, 0);
     if (!dialog)
@@ -252,10 +252,11 @@ done:
     return result;
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int show)
+void __cdecl __security_init_cookie(void);
+
+// Initialize the cookie before entering any function that may have a protected stack frame.
+__declspec(safebuffers) void WINAPI PicoClickerEntry(void)
 {
-    (void)previous;
-    (void)arguments;
-    (void)show;
-    return Run(instance);
+    __security_init_cookie();
+    ExitProcess((UINT)Run(GetModuleHandleW(NULL)));
 }

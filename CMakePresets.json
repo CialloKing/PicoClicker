@@ -1,0 +1,48 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 29,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "hidden": true,
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_FLAGS_RELEASE": "/DNDEBUG"
+      }
+    },
+    {
+      "name": "release-x86",
+      "displayName": "Release x86 (clang-cl + LLD)",
+      "inherits": "release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_C_COMPILER_TARGET": "i686-pc-windows-msvc",
+        "CMAKE_LINKER_TYPE": "LLD"
+      }
+    },
+    {
+      "name": "release-x64",
+      "displayName": "Release x64 (MSVC)",
+      "inherits": "release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release-x86",
+      "configurePreset": "release-x86"
+    },
+    {
+      "name": "release-x64",
+      "configurePreset": "release-x64"
+    }
+  ]
+}

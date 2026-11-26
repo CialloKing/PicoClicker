@@ -9,7 +9,10 @@
 #define IDC_RIGHT 1003
 #define IDC_TOGGLE 1004
 #define IDC_STATUS 1005
+#define IDC_HOTKEY 1006
 
 #define ID_HOTKEY 1
+#define ID_HOTKEY_ALTERNATE 2
+#define ID_CAPTURE_TIMER 3
 
 #endif

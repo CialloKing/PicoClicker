@@ -28,10 +28,12 @@
     },
     {
       "name": "release-x64",
-      "displayName": "Release x64 (MSVC)",
+      "displayName": "Release x64 (clang-cl + MSVC linker)",
       "inherits": "release",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "cl"
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_C_COMPILER_TARGET": "x86_64-pc-windows-msvc",
+        "CMAKE_LINKER_TYPE": "MSVC"
       }
     }
   ],

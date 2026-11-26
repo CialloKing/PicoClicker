@@ -11,31 +11,36 @@ static BOOL running;
 #ifdef PICOCLICKER_LITE
 static PCWSTR idleStatus;
 #else
-static struct
+typedef struct
 {
-    UINT key;
-    UINT modifiers;
-    int id;
-} hotkey;
+    BYTE key;
+    BYTE modifiers;
+} HotkeyBinding;
+
+_Static_assert(sizeof(HotkeyBinding) == 2, "Shortcut file format");
+static HotkeyBinding hotkey;
+static int hotkeyId;
+
+// Captured main keys start at VK_BACK, leaving the lower values for capture phases.
+enum
+{
+    CAPTURE_IDLE,
+    CAPTURE_WAIT_RELEASE,
+    CAPTURE_READY
+};
 
 static struct
 {
     UINT key;
     UINT modifiers;
-    BOOL active;
-    BOOL armed;
 } capture;
 #endif
 
-#ifdef PICOCLICKER_LITE
 static void SetControlText(HWND dialog, int id, PCWSTR text)
 {
     // The edit, radio buttons and text updates share one control-message import.
     SendDlgItemMessageW(dialog, id, WM_SETTEXT, 0, (LPARAM)text);
 }
-#else
-#define SetControlText SetDlgItemTextW
-#endif
 
 static void ShowRunState(HWND dialog, PCWSTR status)
 {
@@ -45,13 +50,13 @@ static void ShowRunState(HWND dialog, PCWSTR status)
 #ifdef PICOCLICKER_LITE
         BOOL settingsEnabled = !running;
 #else
-        BOOL settingsEnabled = !running && !capture.active;
+        BOOL settingsEnabled = !running && capture.key == CAPTURE_IDLE;
 #endif
         EnableWindow(GetDlgItem(dialog, id), settingsEnabled);
     }
 #ifndef PICOCLICKER_LITE
     EnableWindow(GetDlgItem(dialog, IDC_HOTKEY), !running);
-    EnableWindow(GetDlgItem(dialog, IDC_TOGGLE), hotkey.id && !capture.active);
+    EnableWindow(GetDlgItem(dialog, IDC_TOGGLE), hotkeyId && capture.key == CAPTURE_IDLE);
 #endif
     SetControlText(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
     SetControlText(dialog, IDC_STATUS, status);
@@ -66,20 +71,20 @@ static BOOL SetHotkey(HWND dialog, UINT key, UINT modifiers)
     }
 
     // The spare ID lets registration fail without releasing the working hotkey.
-    int id = hotkey.id == ID_HOTKEY ? ID_HOTKEY_ALTERNATE : ID_HOTKEY;
+    int id = hotkeyId == ID_HOTKEY ? ID_HOTKEY_ALTERNATE : ID_HOTKEY;
     if (!RegisterHotKey(dialog, id, modifiers | MOD_NOREPEAT, key))
     {
         return FALSE;
     }
-    if (hotkey.id && !UnregisterHotKey(dialog, hotkey.id))
+    if (hotkeyId && !UnregisterHotKey(dialog, hotkeyId))
     {
         UnregisterHotKey(dialog, id);
         return FALSE;
     }
 
-    hotkey.key = key;
-    hotkey.modifiers = modifiers;
-    hotkey.id = id;
+    hotkey.key = (BYTE)key;
+    hotkey.modifiers = (BYTE)modifiers;
+    hotkeyId = id;
     return TRUE;
 }
 
@@ -90,9 +95,9 @@ static WCHAR HexDigit(UINT digit)
 
 static void ShowHotkey(HWND dialog)
 {
-    if (!hotkey.id)
+    if (!hotkeyId)
     {
-        SetDlgItemTextW(dialog, IDC_HOTKEY, L"未设置");
+        SetControlText(dialog, IDC_HOTKEY, L"未设置");
         return;
     }
 
@@ -141,7 +146,7 @@ static void ShowHotkey(HWND dialog)
         name[3] = HexDigit(hotkey.key & 15);
         name[4] = L'\0';
     }
-    SetDlgItemTextW(dialog, IDC_HOTKEY, text);
+    SetControlText(dialog, IDC_HOTKEY, text);
 }
 
 static BOOL IsMainKey(UINT key)
@@ -164,6 +169,7 @@ enum
 
 // Resolve the process's profile path once for both reading and replacing the record.
 static WCHAR hotkeyPath[MAX_PATH];
+static WCHAR hotkeyTemporaryPath[MAX_PATH];
 static DWORD hotkeyPathLength;
 
 static DWORD GetHotkeyPath(WCHAR *path)
@@ -184,6 +190,12 @@ static void RestoreHotkey(HWND dialog)
     hotkeyPathLength = GetHotkeyPath(hotkeyPath);
     if (hotkeyPathLength)
     {
+        // The profile path is fixed for the process, so later saves only write the suffix.
+        for (DWORD i = 0; i < hotkeyPathLength; ++i)
+        {
+            hotkeyTemporaryPath[i] = hotkeyPath[i];
+        }
+        hotkeyTemporaryPath[hotkeyPathLength] = L'.';
         HANDLE file = CreateFileW(hotkeyPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
             NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (file != INVALID_HANDLE_VALUE)
@@ -213,12 +225,7 @@ static BOOL SaveHotkey(void)
         return FALSE;
     }
 
-    WCHAR temporary[MAX_PATH];
-    for (DWORD i = 0; i < length; ++i)
-    {
-        temporary[i] = hotkeyPath[i];
-    }
-    temporary[length++] = L'.';
+    ++length;
     // The stack-cookie startup already imports this counter.
     LARGE_INTEGER counter;
     DWORD suffix = GetCurrentProcessId();
@@ -229,32 +236,27 @@ static BOOL SaveHotkey(void)
     for (int shift = 28; shift >= 0; shift -= 4)
     {
         UINT digit = (suffix >> shift) & 15;
-        temporary[length++] = HexDigit(digit);
+        hotkeyTemporaryPath[length++] = HexDigit(digit);
     }
-    temporary[length] = L'\0';
+    hotkeyTemporaryPath[length] = L'\0';
 
-    HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, NULL,
+    HANDLE file = CreateFileW(hotkeyTemporaryPath, GENERIC_WRITE, 0, NULL,
         CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE)
     {
         return FALSE;
     }
 
-    BYTE record[2] =
-    {
-        (BYTE)hotkey.key,
-        (BYTE)hotkey.modifiers
-    };
     DWORD written;
-    BOOL saved = WriteFile(file, record, sizeof(record), &written, NULL) && written == sizeof(record);
+    BOOL saved = WriteFile(file, &hotkey, sizeof(hotkey), &written, NULL) && written == sizeof(hotkey);
     BOOL closed = CloseHandle(file);
 
     // Replace only after a complete write, so a failed save preserves the previous record.
-    if (saved && closed && MoveFileExW(temporary, hotkeyPath, MOVEFILE_REPLACE_EXISTING))
+    if (saved && closed && MoveFileExW(hotkeyTemporaryPath, hotkeyPath, MOVEFILE_REPLACE_EXISTING))
     {
         return TRUE;
     }
-    DeleteFileW(temporary);
+    DeleteFileW(hotkeyTemporaryPath);
     return FALSE;
 }
 
@@ -270,24 +272,24 @@ static UINT PressedMainKey(void)
     return 0;
 }
 
-static UINT ReadModifiers(SHORT (WINAPI *readKey)(int))
+static UINT ReadModifiers(BOOL asynchronous)
 {
+    static const BYTE keys[] =
+    {
+        VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN
+    };
+    static const BYTE modifiers[] =
+    {
+        MOD_CONTROL, MOD_ALT, MOD_SHIFT, MOD_WIN, MOD_WIN
+    };
     UINT flags = 0;
-    if (readKey(VK_CONTROL) < 0)
+    for (UINT index = 0; index < ARRAYSIZE(keys); ++index)
     {
-        flags |= MOD_CONTROL;
-    }
-    if (readKey(VK_MENU) < 0)
-    {
-        flags |= MOD_ALT;
-    }
-    if (readKey(VK_SHIFT) < 0)
-    {
-        flags |= MOD_SHIFT;
-    }
-    if (readKey(VK_LWIN) < 0 || readKey(VK_RWIN) < 0)
-    {
-        flags |= MOD_WIN;
+        SHORT state = asynchronous ? GetAsyncKeyState(keys[index]) : GetKeyState(keys[index]);
+        if (state < 0)
+        {
+            flags |= modifiers[index];
+        }
     }
     return flags;
 }
@@ -295,22 +297,22 @@ static UINT ReadModifiers(SHORT (WINAPI *readKey)(int))
 static void FinishCapture(HWND dialog, UINT key)
 {
     KillTimer(dialog, ID_CAPTURE_TIMER);
-    capture.active = FALSE;
+    capture.key = CAPTURE_IDLE;
 
-    PCWSTR status = hotkey.id ? L"就绪" : L"请选择可用的快捷键。";
+    PCWSTR status = hotkeyId ? L"就绪" : L"请设快捷键";
     if (key && key != VK_ESCAPE)
     {
         if (!IsBindableHotkey(key, capture.modifiers))
         {
-            status = L"这个快捷键由系统保留。";
+            status = L"系统保留键";
         }
         else if (SetHotkey(dialog, key, capture.modifiers))
         {
-            status = SaveHotkey() ? L"快捷键已设置。" : L"快捷键已生效，保存失败。";
+            status = SaveHotkey() ? L"已改键" : L"已改键，保存失败";
         }
         else
         {
-            status = L"快捷键不可用，已保留原设置。";
+            status = L"不可用，保留原设置";
         }
     }
     ShowHotkey(dialog);
@@ -323,33 +325,26 @@ static void ToggleCapture(HWND dialog)
     {
         return;
     }
-    if (capture.active)
+    if (capture.key != CAPTURE_IDLE)
     {
         FinishCapture(dialog, 0);
         return;
     }
     if (!SetTimer(dialog, ID_CAPTURE_TIMER, USER_TIMER_MINIMUM, NULL))
     {
-        SetDlgItemTextW(dialog, IDC_STATUS, L"无法录入快捷键。");
+        SetControlText(dialog, IDC_STATUS, L"录入失败");
         return;
     }
 
     // Wait out the key that activated the button when it was opened via the keyboard.
-    capture.armed = PressedMainKey() == 0;
-    capture.key = 0;
-    capture.active = TRUE;
-    SetDlgItemTextW(dialog, IDC_HOTKEY, L"按下快捷键…");
-    ShowRunState(dialog, L"按下新快捷键，Esc 取消。");
+    capture.key = PressedMainKey() ? CAPTURE_WAIT_RELEASE : CAPTURE_READY;
+    SetControlText(dialog, IDC_HOTKEY, L"按下快捷键…");
+    ShowRunState(dialog, L"按键，Esc 取消");
 }
 
 static void PollCapture(HWND dialog)
 {
-    if (GetForegroundWindow() != dialog)
-    {
-        FinishCapture(dialog, 0);
-        return;
-    }
-    if (capture.key)
+    if (capture.key >= VK_BACK)
     {
         if (GetAsyncKeyState((int)capture.key) >= 0)
         {
@@ -360,33 +355,35 @@ static void PollCapture(HWND dialog)
 
     // Another app's registered chord might bypass this dialog's queued key messages.
     UINT key = PressedMainKey();
-    if (!capture.armed)
+    if (capture.key == CAPTURE_WAIT_RELEASE)
     {
-        capture.armed = key == 0;
+        if (!key)
+        {
+            capture.key = CAPTURE_READY;
+        }
     }
     else if (key)
     {
         capture.key = key;
-        capture.modifiers = ReadModifiers(GetAsyncKeyState);
+        capture.modifiers = ReadModifiers(TRUE);
     }
 }
 
 static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 {
-    if (!capture.active || message->message < WM_KEYFIRST || message->message > WM_KEYLAST)
+    if (capture.key == CAPTURE_IDLE || message->message < WM_KEYFIRST || message->message > WM_KEYLAST)
     {
         return FALSE;
     }
 
     UINT key = (UINT)message->wParam;
-    if ((message->message == WM_KEYDOWN || message->message == WM_SYSKEYDOWN) &&
-        capture.armed && !capture.key && IsMainKey(key))
+    UINT kind = message->message & ~(WM_SYSKEYDOWN ^ WM_KEYDOWN);
+    if (kind == WM_KEYDOWN && capture.key == CAPTURE_READY && IsMainKey(key))
     {
         capture.key = key;
-        capture.modifiers = ReadModifiers(GetKeyState);
+        capture.modifiers = ReadModifiers(FALSE);
     }
-    else if ((message->message == WM_KEYUP || message->message == WM_SYSKEYUP) &&
-        key == capture.key)
+    else if (kind == WM_KEYUP && capture.key >= VK_BACK && key == capture.key)
     {
         // Wait for release so the captured press can't immediately start clicking.
         FinishCapture(dialog, key);
@@ -411,11 +408,7 @@ static void Stop(HWND dialog, PCWSTR status)
 static UINT ReadInterval(HWND dialog)
 {
     WCHAR text[7];
-#ifdef PICOCLICKER_LITE
     UINT length = (UINT)SendDlgItemMessageW(dialog, IDC_INTERVAL, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text);
-#else
-    UINT length = GetDlgItemTextW(dialog, IDC_INTERVAL, text, ARRAYSIZE(text));
-#endif
     UINT interval = 0;
 
     // Read one extra character so overlong pasted input cannot be accepted after truncation.
@@ -435,14 +428,10 @@ static UINT ReadInterval(HWND dialog)
     return interval;
 }
 
-#ifdef PICOCLICKER_LITE
 static BOOL IsClickButtonChecked(HWND dialog, int id)
 {
     return SendDlgItemMessageW(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED;
 }
-#else
-#define IsClickButtonChecked(dialog, id) (IsDlgButtonChecked((dialog), (id)) == BST_CHECKED)
-#endif
 
 static void SelectClickPair(HWND dialog)
 {
@@ -477,7 +466,7 @@ static void Toggle(HWND dialog)
         return;
     }
 #ifndef PICOCLICKER_LITE
-    if (!hotkey.id || capture.active)
+    if (!hotkeyId || capture.key != CAPTURE_IDLE)
     {
         return;
     }
@@ -486,7 +475,7 @@ static void Toggle(HWND dialog)
     UINT interval = ReadInterval(dialog);
     if (interval == 0 || interval > 60000)
     {
-        SetControlText(dialog, IDC_STATUS, L"请输入 1–60,000 ms 的整数。");
+        SetControlText(dialog, IDC_STATUS, L"请输入 1–60000 ms。");
         return;
     }
 
@@ -501,7 +490,7 @@ static void Toggle(HWND dialog)
     due.QuadPart = -(LONG)(interval * 10000u);
     if (!timer || !SetWaitableTimer(timer, &due, (LONG)interval, NULL, NULL, FALSE))
     {
-        SetControlText(dialog, IDC_STATUS, L"无法启动高精度计时器。");
+        SetControlText(dialog, IDC_STATUS, L"计时器启动失败。");
         return;
     }
 
@@ -528,7 +517,7 @@ static void Click(HWND dialog)
             // Try to release the button when only the down event made it into the stream.
             SendInput(1, &clickPair[1], sizeof(clickPair[1]));
         }
-        Stop(dialog, L"无法发送点击，已停止。");
+        Stop(dialog, L"点击失败，已停止。");
     }
 }
 
@@ -537,17 +526,15 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
     switch (message)
     {
         case WM_INITDIALOG:
-#ifdef PICOCLICKER_LITE
             SendDlgItemMessageW(dialog, IDC_LEFT, BM_SETCHECK, BST_CHECKED, 0);
+#ifdef PICOCLICKER_LITE
             // Manual start and stop are still available when another app owns F1.
             idleStatus = RegisterHotKey(dialog, ID_HOTKEY, MOD_NOREPEAT, VK_F1) ? L"F1 启停" : L"F1 不可用";
             SetControlText(dialog, IDC_STATUS, idleStatus);
 #else
-            SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
-            CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
             RestoreHotkey(dialog);
             ShowHotkey(dialog);
-            ShowRunState(dialog, hotkey.id ? L"就绪" : L"F1 不可用，请设置快捷键。");
+            ShowRunState(dialog, hotkeyId ? L"就绪" : L"F1 不可用，请改键");
 #endif
             return TRUE;
         case WM_COMMAND:
@@ -565,12 +552,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             if (LOWORD(wParam) == IDCANCEL)
             {
-#ifdef PICOCLICKER_LITE
                 goto close;
-#else
-                SendMessageW(dialog, WM_CLOSE, 0, 0);
-                return TRUE;
-#endif
             }
             break;
         case WM_HOTKEY:
@@ -582,14 +564,14 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             break;
 #else
-            if (hotkey.id && wParam == (WPARAM)hotkey.id &&
+            if (hotkeyId && wParam == (WPARAM)hotkeyId &&
                 lParam == MAKELPARAM(hotkey.modifiers, hotkey.key))
             {
-                if (!capture.active)
+                if (capture.key == CAPTURE_IDLE)
                 {
                     Toggle(dialog);
                 }
-                else if (capture.armed && !capture.key)
+                else if (capture.key == CAPTURE_READY)
                 {
                     capture.key = hotkey.key;
                     capture.modifiers = hotkey.modifiers;
@@ -598,17 +580,22 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             break;
         case WM_TIMER:
-            if (capture.active && wParam == ID_CAPTURE_TIMER)
+            if (capture.key != CAPTURE_IDLE && wParam == ID_CAPTURE_TIMER)
             {
                 PollCapture(dialog);
                 return TRUE;
             }
             break;
+        case WM_ACTIVATE:
+            // Stop polling as soon as the dialog loses activation during capture.
+            if (LOWORD(wParam) == WA_INACTIVE && capture.key != CAPTURE_IDLE)
+            {
+                FinishCapture(dialog, 0);
+            }
+            break;
 #endif
         case WM_CLOSE:
-#ifdef PICOCLICKER_LITE
         close:
-#endif
             Stop(dialog, NULL);
             DestroyWindow(dialog);
             return TRUE;
@@ -616,13 +603,13 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
 #ifdef PICOCLICKER_LITE
             UnregisterHotKey(dialog, ID_HOTKEY);
 #else
-            if (capture.active)
+            if (capture.key != CAPTURE_IDLE)
             {
                 KillTimer(dialog, ID_CAPTURE_TIMER);
             }
-            if (hotkey.id)
+            if (hotkeyId)
             {
-                UnregisterHotKey(dialog, hotkey.id);
+                UnregisterHotKey(dialog, hotkeyId);
             }
 #endif
             PostQuitMessage(0);
@@ -684,13 +671,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
     }
 
 done:
-    // Lite lets the immediately following ExitProcess close the timer handle.
-#ifndef PICOCLICKER_LITE
-    if (timer)
-    {
-        CloseHandle(timer);
-    }
-#endif
+    // ExitProcess closes the timer handle immediately after Run returns.
     return result;
 }
 
@@ -702,10 +683,8 @@ UINT_PTR __security_cookie_complement;
 
 void __cdecl __security_init_cookie(void);
 
-#ifdef PICOCLICKER_LITE
 // The linker already supplies the module base needed to load the dialog resource.
 extern IMAGE_DOS_HEADER __ImageBase;
-#endif
 
 // Initialize the cookie before entering any function that may have a protected stack frame.
 __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
@@ -730,9 +709,5 @@ __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
         __fastfail(FAST_FAIL_GS_COOKIE_INIT);
     }
 #endif
-#ifdef PICOCLICKER_LITE
     ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
-#else
-    ExitProcess((UINT)Run(GetModuleHandleW(NULL)));
-#endif
 }

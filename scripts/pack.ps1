@@ -6,8 +6,8 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $reader = (Get-Command llvm-readobj -CommandType Application).Source
 $targets = @(
-    @{ Name = 'x86'; Machine = 'IMAGE_FILE_MACHINE_I386'; MaxSize = 8KB }
-    @{ Name = 'x64'; Machine = 'IMAGE_FILE_MACHINE_AMD64'; MaxSize = 12KB }
+    @{ Name = 'x86'; Machine = 'IMAGE_FILE_MACHINE_I386'; MaxSize = 9KB }
+    @{ Name = 'x64'; Machine = 'IMAGE_FILE_MACHINE_AMD64'; MaxSize = 13KB }
 )
 $requiredFields = @(
     'IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE'

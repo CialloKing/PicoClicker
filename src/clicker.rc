@@ -16,8 +16,11 @@ CAPTION "PicoClicker"
 FONT 9, "Segoe UI"
 BEGIN
     LTEXT "点击间隔 (ms)", -1, 7, 9, 59, 11
+#ifdef PICOCLICKER_LITE
+    // Initialize the interval in the resource without a startup API call.
+    CONTROL "100", IDC_INTERVAL, "Edit", ES_NUMBER | ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 70, 7, 97, 14
+#else
     EDITTEXT IDC_INTERVAL, 70, 7, 97, 14, ES_NUMBER | ES_AUTOHSCROLL
-#ifndef PICOCLICKER_LITE
     LTEXT "快捷键", -1, 7, 29, 59, 11
     PUSHBUTTON "F1", IDC_HOTKEY, 70, 26, 97, 15
 #endif

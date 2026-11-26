@@ -26,6 +26,16 @@ static struct
 } capture;
 #endif
 
+#ifdef PICOCLICKER_LITE
+static void SetControlText(HWND dialog, int id, PCWSTR text)
+{
+    // The edit, radio buttons and text updates share one control-message import.
+    SendDlgItemMessageW(dialog, id, WM_SETTEXT, 0, (LPARAM)text);
+}
+#else
+#define SetControlText SetDlgItemTextW
+#endif
+
 static void ShowRunState(HWND dialog, PCWSTR status)
 {
     // These IDs are contiguous so click settings can be locked as a group.
@@ -42,8 +52,8 @@ static void ShowRunState(HWND dialog, PCWSTR status)
     EnableWindow(GetDlgItem(dialog, IDC_HOTKEY), !running);
     EnableWindow(GetDlgItem(dialog, IDC_TOGGLE), hotkey.id && !capture.active);
 #endif
-    SetDlgItemTextW(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
-    SetDlgItemTextW(dialog, IDC_STATUS, status);
+    SetControlText(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
+    SetControlText(dialog, IDC_STATUS, status);
 }
 
 #ifndef PICOCLICKER_LITE
@@ -400,7 +410,11 @@ static void Stop(HWND dialog, PCWSTR status)
 static UINT ReadInterval(HWND dialog)
 {
     WCHAR text[7];
+#ifdef PICOCLICKER_LITE
+    UINT length = (UINT)SendDlgItemMessageW(dialog, IDC_INTERVAL, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text);
+#else
     UINT length = GetDlgItemTextW(dialog, IDC_INTERVAL, text, ARRAYSIZE(text));
+#endif
     UINT interval = 0;
 
     // Read one extra character so overlong pasted input cannot be accepted after truncation.
@@ -420,6 +434,15 @@ static UINT ReadInterval(HWND dialog)
     return interval;
 }
 
+#ifdef PICOCLICKER_LITE
+static BOOL IsClickButtonChecked(HWND dialog, int id)
+{
+    return SendDlgItemMessageW(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED;
+}
+#else
+#define IsClickButtonChecked(dialog, id) (IsDlgButtonChecked((dialog), (id)) == BST_CHECKED)
+#endif
+
 static void SelectClickPair(HWND dialog)
 {
     // The zero-initialized pair is mouse input and each release flag follows its press flag.
@@ -428,11 +451,11 @@ static void SelectClickPair(HWND dialog)
         MOUSEEVENTF_RIGHTUP == (MOUSEEVENTF_RIGHTDOWN << 1), "Mouse button flags");
 
     DWORD down = MOUSEEVENTF_LEFTDOWN;
-    if (IsDlgButtonChecked(dialog, IDC_MIDDLE) == BST_CHECKED)
+    if (IsClickButtonChecked(dialog, IDC_MIDDLE))
     {
         down = MOUSEEVENTF_MIDDLEDOWN;
     }
-    else if (IsDlgButtonChecked(dialog, IDC_RIGHT) == BST_CHECKED)
+    else if (IsClickButtonChecked(dialog, IDC_RIGHT))
     {
         down = MOUSEEVENTF_RIGHTDOWN;
     }
@@ -462,7 +485,7 @@ static void Toggle(HWND dialog)
     UINT interval = ReadInterval(dialog);
     if (interval == 0 || interval > 60000)
     {
-        SetDlgItemTextW(dialog, IDC_STATUS, L"请输入 1–60,000 ms 的整数。");
+        SetControlText(dialog, IDC_STATUS, L"请输入 1–60,000 ms 的整数。");
         return;
     }
 
@@ -477,7 +500,7 @@ static void Toggle(HWND dialog)
     due.QuadPart = -(LONG)(interval * 10000u);
     if (!timer || !SetWaitableTimer(timer, &due, (LONG)interval, NULL, NULL, FALSE))
     {
-        SetDlgItemTextW(dialog, IDC_STATUS, L"无法启动高精度计时器。");
+        SetControlText(dialog, IDC_STATUS, L"无法启动高精度计时器。");
         return;
     }
 
@@ -513,13 +536,14 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
     switch (message)
     {
         case WM_INITDIALOG:
-            SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
-            CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
 #ifdef PICOCLICKER_LITE
+            SendDlgItemMessageW(dialog, IDC_LEFT, BM_SETCHECK, BST_CHECKED, 0);
             // Manual start and stop are still available when another app owns F1.
             idleStatus = RegisterHotKey(dialog, ID_HOTKEY, MOD_NOREPEAT, VK_F1) ? L"F1 启停" : L"F1 不可用";
-            SetDlgItemTextW(dialog, IDC_STATUS, idleStatus);
+            SetControlText(dialog, IDC_STATUS, idleStatus);
 #else
+            SetDlgItemInt(dialog, IDC_INTERVAL, 100, FALSE);
+            CheckRadioButton(dialog, IDC_LEFT, IDC_RIGHT, IDC_LEFT);
             RestoreHotkey(dialog);
             ShowHotkey(dialog);
             ShowRunState(dialog, hotkey.id ? L"就绪" : L"F1 不可用，请设置快捷键。");
@@ -540,8 +564,12 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             if (LOWORD(wParam) == IDCANCEL)
             {
+#ifdef PICOCLICKER_LITE
+                goto close;
+#else
                 SendMessageW(dialog, WM_CLOSE, 0, 0);
                 return TRUE;
+#endif
             }
             break;
         case WM_HOTKEY:
@@ -577,6 +605,9 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             break;
 #endif
         case WM_CLOSE:
+#ifdef PICOCLICKER_LITE
+        close:
+#endif
             Stop(dialog, NULL);
             DestroyWindow(dialog);
             return TRUE;
@@ -652,18 +683,30 @@ static __declspec(noinline) int Run(HINSTANCE instance)
     }
 
 done:
+    // Lite lets the immediately following ExitProcess close the timer handle.
+#ifndef PICOCLICKER_LITE
     if (timer)
     {
         CloseHandle(timer);
     }
+#endif
     return result;
 }
 
 void __cdecl __security_init_cookie(void);
 
+#ifdef PICOCLICKER_LITE
+// The linker already supplies the module base needed to load the dialog resource.
+extern IMAGE_DOS_HEADER __ImageBase;
+#endif
+
 // Initialize the cookie before entering any function that may have a protected stack frame.
 __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
 {
     __security_init_cookie();
+#ifdef PICOCLICKER_LITE
+    ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
+#else
     ExitProcess((UINT)Run(GetModuleHandleW(NULL)));
+#endif
 }

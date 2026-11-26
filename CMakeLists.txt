@@ -21,28 +21,23 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     list(APPEND compile_options /clang:-Oz)
     set(toolchain "clang-cl ${CMAKE_C_COMPILER_VERSION}")
     if(CMAKE_LINKER_TYPE STREQUAL "LLD")
-        list(APPEND compile_options /clang:-flto)
+        if(NOT CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+            list(APPEND compile_options /clang:-flto)
+        endif()
         if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
             # The clicker only needs scalar integer operations. Keep their smaller x86 encoding.
             list(APPEND compile_options /clang:-mno-sse /clang:-mno-sse2)
-
+        endif()
+        if(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
             # The 64-byte MZ image exits in DOS with code 1 (B8 01 4C CD 21 at offset 0x30).
-            # Its PE32 header and section table then fit in one 512-byte block.
-            set(x86_dos_stub "${CMAKE_CURRENT_SOURCE_DIR}/src/x86-dos-stub.bin")
-            list(APPEND link_options "/STUB:${x86_dos_stub}")
+            # It leaves room for the PE headers to fit in one 512-byte block after packing.
+            set(dos_stub "${CMAKE_CURRENT_SOURCE_DIR}/src/x86-dos-stub.bin")
+            list(APPEND link_options "/STUB:${dos_stub}")
         endif()
         string(APPEND toolchain " + LLD")
     elseif(CMAKE_LINKER_TYPE STREQUAL "MSVC")
         string(APPEND toolchain " + MSVC linker")
-        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            # Both sections are read-only. Keep the x64 unwind table without a separate padding block.
-            list(APPEND link_options "/MERGE:.pdata=.rdata")
-        endif()
         if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
-            # GuardMemcpy needs a copy target. Supply a small one instead of pulling in the CRT routine.
-            list(APPEND clicker_sources src/compact_memcpy.c)
-            set_property(SOURCE src/compact_memcpy.c APPEND PROPERTY COMPILE_OPTIONS /clang:-ffreestanding)
-
             # Omit the POGO section-group debug metadata when the linker accepts the switch.
             include(CheckLinkerFlag)
             check_linker_flag(C "/NOCOFFGRPINFO" PICO_HAVE_NOCOFFGRPINFO)
@@ -50,6 +45,16 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
                 list(APPEND link_options /NOCOFFGRPINFO)
             endif()
         endif()
+    endif()
+    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64" AND CMAKE_LINKER_TYPE MATCHES "^(LLD|MSVC)$")
+        # GuardMemcpy needs a copy target. Supply a small one instead of pulling in the CRT routine.
+        list(APPEND clicker_sources src/compact_memcpy.c)
+        set_property(SOURCE src/compact_memcpy.c APPEND PROPERTY COMPILE_OPTIONS /clang:-ffreestanding)
+    endif()
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND (CMAKE_LINKER_TYPE STREQUAL "MSVC" OR
+        (CMAKE_LINKER_TYPE STREQUAL "LLD" AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")))
+        # Keep the unwind table in read-only data without a separate padding block.
+        list(APPEND link_options "/MERGE:.pdata=.rdata")
     endif()
 else()
     message(FATAL_ERROR "Use cl or clang-cl for the PicoClicker release build.")
@@ -78,8 +83,8 @@ foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
     target_compile_options(${clicker} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${compile_options}>")
     target_link_options(${clicker} PRIVATE ${link_options})
     target_link_libraries(${clicker} PRIVATE kernel32 user32 libcmt libvcruntime)
-    if(x86_dos_stub)
-        set_property(TARGET ${clicker} APPEND PROPERTY LINK_DEPENDS "${x86_dos_stub}")
+    if(dos_stub)
+        set_property(TARGET ${clicker} APPEND PROPERTY LINK_DEPENDS "${dos_stub}")
     endif()
 endforeach()
 

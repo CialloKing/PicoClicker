@@ -21,6 +21,7 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     list(APPEND compile_options /clang:-Oz)
     set(toolchain "clang-cl ${CMAKE_C_COMPILER_VERSION}")
     if(CMAKE_LINKER_TYPE STREQUAL "LLD")
+        # Native x64 objects produced a smaller code section in the full and ThinLTO comparisons.
         if(NOT CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
             list(APPEND compile_options /clang:-flto)
         endif()
@@ -87,6 +88,12 @@ foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
         set_property(TARGET ${clicker} APPEND PROPERTY LINK_DEPENDS "${dos_stub}")
     endif()
 endforeach()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
+    CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
+    # The shorter load configuration leaves room for the standard edition's relocations.
+    target_sources(PicoClicker PRIVATE src/compact_load_config32.c)
+endif()
 
 # The same definition controls both the code and the compiled dialog.
 target_compile_definitions(PicoClickerLite PRIVATE PICOCLICKER_LITE)

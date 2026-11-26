@@ -1,6 +1,6 @@
 # PicoClicker
 
-PicoClicker 是一个原生 Windows 鼠标连点器。x86 和 x64 各是一份可离线运行的 EXE。
+PicoClicker 是一个原生 Windows 鼠标连点器。x86 和 x64 各是一份可离线运行的 EXE。 启动时请求管理员权限，以便向同为管理员权限的窗口发送点击。
 
 ## 使用
 

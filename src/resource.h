@@ -1,0 +1,15 @@
+#ifndef PICOCLICKER_RESOURCE_H
+#define PICOCLICKER_RESOURCE_H
+
+#define IDD_MAIN 101
+
+#define IDC_INTERVAL 1000
+#define IDC_LEFT 1001
+#define IDC_MIDDLE 1002
+#define IDC_RIGHT 1003
+#define IDC_TOGGLE 1004
+#define IDC_STATUS 1005
+
+#define ID_HOTKEY 1
+
+#endif

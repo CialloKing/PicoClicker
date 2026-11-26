@@ -19,6 +19,40 @@ function Write-U32([int] $offset, [uint32] $value) {
     [BitConverter]::GetBytes($value).CopyTo($output, $offset)
 }
 
+function Get-ResourceLeaves($section) {
+    # LLD emits a type, ID and language level. Only the leaf payload RVAs change.
+    $nodes = @(0)
+    for ($depth = 0; $depth -lt 3; $depth++) {
+        $count = if ($depth -eq 0) { 2 } else { 1 }
+        $next = foreach ($node in $nodes) {
+            if ($node % 4 -or $node + 16 + 8 * $count -gt $section.Size) { return }
+            $offset = $section.RawOffset + $node
+            if ((Read-U16 ($offset + 12)) -ne 0 -or (Read-U16 ($offset + 14)) -ne $count) { return }
+            for ($index = 0; $index -lt $count; $index++) {
+                $entry = $offset + 16 + $index * 8
+                $child = Read-U32 ($entry + 4)
+                if ((Read-U32 $entry) -gt 0xffff -or (($child -shr 31) -ne 0) -ne ($depth -lt 2)) { return }
+                $child -band 0x7fffffff
+            }
+        }
+        $nodes = @($next)
+    }
+
+    if ($nodes[0] -eq $nodes[1]) { return }
+    $payloadStart = [Math]::Max($nodes[0], $nodes[1]) + 16
+    if ($payloadStart -gt $section.Size) { return }
+    foreach ($node in $nodes) {
+        if ($node % 4) { return }
+        $offset = $section.RawOffset + $node
+        $rva = Read-U32 $offset
+        $size = Read-U32 ($offset + 4)
+        if ($rva -lt $section.RVA + $payloadStart -or $rva + $size -gt $section.RVA + $section.Size -or $size -eq 0) {
+            return
+        }
+    }
+    $nodes
+}
+
 # Only the unsigned five-section layout produced by the release linker is eligible.
 $pe = 64
 $optional = $pe + 24
@@ -69,56 +103,64 @@ $sections = for ($index = 0; $index -lt 5; $index++) {
     }
 }
 
-if (($sections.Name -join ',') -cne '.text,.rdata,.data,.rsrc,.reloc') {
+$layout = $sections.Name -join ','
+$packResources = $layout -ceq '.text,.data,.rpack,.rsrc,.reloc'
+if (!$packResources -and $layout -cne '.text,.rdata,.data,.rsrc,.reloc') {
     return
 }
 
 $rawEnd = $headers
+$virtualEnd = 4096
 foreach ($section in $sections) {
+    if ($section.RVA -ne $virtualEnd -or !$section.Size) { return }
+    $virtualEnd += [Math]::Ceiling($section.Size / 4096.0) * 4096
     if ($section.RawSize -eq 0) {
-        if ($section.RawOffset -ne 0) { return }
+        if ($section.RawOffset -ne 0 -or $section.Name -cne '.data') { return }
         continue
     }
-    if ($section.RawOffset -ne $rawEnd -or $section.RawSize % 512) { return }
+    if ($section.RawOffset -ne $rawEnd -or $section.RawSize -ne [Math]::Ceiling($section.Size / 512.0) * 512) { return }
     $rawEnd += $section.RawSize
 }
-if ($rawEnd -ne $image.Length) { return }
+if ($rawEnd -ne $image.Length -or (Read-U32 ($optional + 56)) -ne $virtualEnd) { return }
 
-$constants = $sections[1]
+$constants = if ($packResources) { $sections[2] } else { $sections[1] }
+$resources = $sections[3]
 $relocations = $sections[4]
-$directory = $directories + 5 * 8
+$keptCount = if ($packResources) { 3 } else { 4 }
+$removed = $sections[$keptCount]
+$resourceDirectory = $directories + 2 * 8
+$relocDirectory = $directories + 5 * 8
 $initialized = Read-U32 ($optional + 8)
-if ($constants.Flags -ne 0x40000040 -or $relocations.Flags -ne 0x42000040 -or $relocations.RawSize -ne 512 -or
-    (Read-U32 ($optional + 56)) -ne $relocations.RVA + 4096 -or
-    $initialized -lt $relocations.RawSize -or
-    $relocations.RVA -ne (Read-U32 $directory) -or $relocations.Size -ne (Read-U32 ($directory + 4)) -or
-    $relocations.Size -lt 8 -or $relocations.Size -gt $relocations.RawSize) {
+if ($constants.Flags -ne 0x40000040 -or $resources.Flags -ne 0x40000040 -or
+    $relocations.Flags -ne 0x42000040 -or $relocations.RawSize -ne 512 -or
+    $initialized -lt $rawEnd - $removed.RawOffset -or
+    $relocations.RVA -ne (Read-U32 $relocDirectory) -or
+    $relocations.Size -ne (Read-U32 ($relocDirectory + 4)) -or $relocations.Size -lt 8) {
     return
 }
 
 for ($index = 0; $index -lt 16; $index++) {
-    if ($index -eq 5) { continue }
+    if ($index -eq 5 -or ($packResources -and $index -eq 2)) { continue }
     $rva = Read-U32 ($directories + 8 * $index)
     $size = Read-U32 ($directories + 8 * $index + 4)
-    if ($rva -ge $relocations.RVA -or $size -gt $relocations.RVA - $rva) { return }
+    if ($rva -ge $removed.RVA -or $size -gt $removed.RVA - $rva) { return }
 }
 
-# The removed section must contain only relocation blocks for earlier image pages.
+# Every relocation block must still target a page in a retained section.
 for ($index = 0; $index -lt $relocations.Size; $index += $blockSize) {
     $block = $relocations.RawOffset + $index
     $page = Read-U32 $block
     $blockSize = Read-U32 ($block + 4)
-    if ($page -lt 4096 -or $page % 4096 -or $page -ge $relocations.RVA -or
+    if ($page -lt 4096 -or $page % 4096 -or $page -ge $removed.RVA -or
         $blockSize -lt 8 -or $blockSize % 4 -or $index + $blockSize -gt $relocations.Size) {
         return
     }
 }
 
-# The directory can live in the unused tail of read-only .rdata at a DWORD boundary.
+# The directory can live in the unused tail of the read-only section at a DWORD boundary.
 $tableOffset = [int]([Math]::Ceiling($constants.Size / 4.0) * 4)
 $tableEnd = $tableOffset + $relocations.Size
-if ($tableEnd -gt $constants.RawSize -or $constants.RVA + $tableEnd -gt $sections[2].RVA -or
-    $constants.RawOffset -lt $headers -or $constants.RawOffset + $constants.RawSize -gt $relocations.RawOffset) {
+if ($tableEnd -gt $constants.RawSize) {
     return
 }
 
@@ -128,24 +170,50 @@ for ($index = $constants.Size; $index -lt $tableEnd; $index++) {
     }
 }
 
-# The remaining sections fit in one aligned header block. Only their file offsets move.
+if ($packResources) {
+    if ($constants.Size -lt 8 -or (Read-U32 $constants.RawOffset) -ne 0x4f434950 -or
+        $resources.RVA -ne (Read-U32 $resourceDirectory) -or
+        $resources.Size -ne (Read-U32 ($resourceDirectory + 4))) { return }
+    $capacity = Read-U32 ($constants.RawOffset + 4)
+    if ($capacity -lt $resources.Size -or $capacity -gt $constants.Size -or $capacity % 8) { return }
+    for ($index = 8; $index -lt $capacity; $index++) {
+        if ($image[$constants.RawOffset + $index] -ne 0) { return }
+    }
+    $resourceLeaves = @(Get-ResourceLeaves $resources)
+    if ($resourceLeaves.Count -ne 2) { return }
+}
+
+# The retained sections fit in one header block and keep their original RVAs.
 $headerSize = 512
 $shift = $headers - $headerSize
-[byte[]] $output = [byte[]]::new($relocations.RawOffset - $shift)
+$constantStart = $constants.RawOffset - $shift
+[byte[]] $output = [byte[]]::new($removed.RawOffset - $shift)
 [Array]::Copy($image, 0, $output, 0, $headerSize)
-[Array]::Copy($image, $headers, $output, $headerSize, $relocations.RawOffset - $headers)
-[Array]::Copy($image, $relocations.RawOffset, $output, $constants.RawOffset - $shift + $tableOffset, $relocations.Size)
-[Array]::Clear($output, $relocations.Header, $headerSize - $relocations.Header)
-[BitConverter]::GetBytes([uint16]4).CopyTo($output, $pe + 6)
-Write-U32 ($optional + 8) ($initialized - $relocations.RawSize)
-Write-U32 ($optional + 56) $relocations.RVA
+[Array]::Copy($image, $headers, $output, $headerSize, $removed.RawOffset - $headers)
+[Array]::Copy($image, $relocations.RawOffset, $output, $constantStart + $tableOffset, $relocations.Size)
+[Array]::Clear($output, $removed.Header, $headerSize - $removed.Header)
+[BitConverter]::GetBytes([uint16]$keptCount).CopyTo($output, $pe + 6)
+Write-U32 ($optional + 8) ($initialized - ($rawEnd - $removed.RawOffset))
+Write-U32 ($optional + 56) $removed.RVA
 Write-U32 ($optional + 60) $headerSize
 Write-U32 ($constants.Header + 8) $tableEnd
-Write-U32 $directory ($constants.RVA + $tableOffset)
-foreach ($section in ($sections | Select-Object -First 4)) {
+Write-U32 $relocDirectory ($constants.RVA + $tableOffset)
+foreach ($section in ($sections | Select-Object -First $keptCount)) {
     if ($section.RawOffset) {
         Write-U32 ($section.Header + 20) ($section.RawOffset - $shift)
     }
+}
+
+if ($packResources) {
+    # Put the resource directory at the start of a named .rsrc section for SDK tools.
+    [Array]::Copy($image, $resources.RawOffset, $output, $constantStart, $resources.Size)
+    foreach ($leaf in $resourceLeaves) {
+        $payload = Read-U32 ($resources.RawOffset + $leaf)
+        Write-U32 ($constantStart + $leaf) ($constants.RVA + ($payload - $resources.RVA))
+    }
+    [Array]::Clear($output, $constants.Header, 8)
+    [Text.Encoding]::ASCII.GetBytes('.rsrc').CopyTo($output, $constants.Header)
+    Write-U32 $resourceDirectory $constants.RVA
 }
 
 $temporary = "$path.$([Guid]::NewGuid().ToString('N')).tmp"

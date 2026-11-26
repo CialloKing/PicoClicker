@@ -89,11 +89,19 @@ foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
     endif()
 endforeach()
 
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
-    CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
-    # The shorter PE32 load configuration leaves more room for relocations and resources.
-    target_sources(PicoClicker PRIVATE src/compact_load_config32.c)
-    target_sources(PicoClickerLite PRIVATE src/compact_load_config32.c)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
+    # Reserve a prefix the size of the resource tree in the editions where sharing a
+    # read-only section saves a file block. Keep the original resources until packing.
+    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
+        # The shorter PE32 load configuration leaves more room for relocations and resources.
+        target_sources(PicoClicker PRIVATE src/compact_load_config32.c)
+        target_sources(PicoClickerLite PRIVATE src/compact_load_config32.c)
+        target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
+        target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
+    elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+        target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
+        target_link_options(PicoClicker PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack)
+    endif()
 endif()
 
 # The same definition controls both the code and the compiled dialog.

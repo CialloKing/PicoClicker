@@ -3,6 +3,15 @@
 
 #include "resource.h"
 
+#ifdef PICO_RESOURCE_PREFIX
+// The marker and capacity let the packer identify the unused prefix before writing resources.
+#pragma section(".rpack", read)
+__declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREFIX / sizeof(DWORD)] =
+{
+    0x4f434950u, PICO_RESOURCE_PREFIX
+};
+#endif
+
 static HANDLE timer;
 static INPUT clickPair[2];
 static UINT runId;

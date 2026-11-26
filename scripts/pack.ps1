@@ -42,7 +42,7 @@ try {
             throw "$($executable.FullName) is $($executable.Length) bytes. Budget is $($target.MaxSize) bytes."
         }
 
-        $pe = (& $reader --file-headers --coff-imports --coff-load-config $executable.FullName) -join [Environment]::NewLine
+        $pe = (& $reader --file-headers --coff-imports --coff-load-config --coff-resources $executable.FullName) -join [Environment]::NewLine
         if ($LASTEXITCODE -ne 0 -or $pe -notmatch "Machine: $($machines[$target.Name])\b") {
             throw "Unexpected PE architecture in $($executable.FullName)"
         }
@@ -58,6 +58,9 @@ try {
         }
         if ($target.Name -eq 'x64' -and $pe -notmatch 'ExceptionTableSize: 0x[1-9A-F]') {
             throw 'x64 unwind data is missing.'
+        }
+        if ($pe -notmatch 'Type: DIALOG \(ID 5\)' -or $pe -notmatch 'Type: MANIFEST \(ID 24\)') {
+            throw "Missing dialog or manifest resource in $($executable.Name)."
         }
 
         [pscustomobject]@{

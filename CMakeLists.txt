@@ -25,6 +25,11 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
             # The clicker only needs scalar integer operations. Keep their smaller x86 encoding.
             list(APPEND compile_options /clang:-mno-sse /clang:-mno-sse2)
+
+            # The 64-byte MZ image exits in DOS with code 1 (B8 01 4C CD 21 at offset 0x30).
+            # Its PE32 header and section table then fit in one 512-byte block.
+            set(x86_dos_stub "${CMAKE_CURRENT_SOURCE_DIR}/src/x86-dos-stub.bin")
+            list(APPEND link_options "/STUB:${x86_dos_stub}")
         endif()
         string(APPEND toolchain " + LLD")
     elseif(CMAKE_LINKER_TYPE STREQUAL "MSVC")
@@ -73,6 +78,9 @@ foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
     target_compile_options(${clicker} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${compile_options}>")
     target_link_options(${clicker} PRIVATE ${link_options})
     target_link_libraries(${clicker} PRIVATE kernel32 user32 libcmt libvcruntime)
+    if(x86_dos_stub)
+        set_property(TARGET ${clicker} APPEND PROPERTY LINK_DEPENDS "${x86_dos_stub}")
+    endif()
 endforeach()
 
 # The same definition controls both the code and the compiled dialog.

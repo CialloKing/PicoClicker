@@ -40,6 +40,18 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
             # Both sections are read-only. Keep the x64 unwind table without a separate padding block.
             target_link_options(PicoClicker PRIVATE "/MERGE:.pdata=.rdata")
         endif()
+        if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+            # GuardMemcpy needs a copy target. Supply a small one instead of pulling in the CRT routine.
+            target_sources(PicoClicker PRIVATE src/compact_memcpy.c)
+            set_property(SOURCE src/compact_memcpy.c APPEND PROPERTY COMPILE_OPTIONS /clang:-ffreestanding)
+
+            # Omit the POGO section-group debug metadata when the linker accepts the switch.
+            include(CheckLinkerFlag)
+            check_linker_flag(C "/NOCOFFGRPINFO" PICO_HAVE_NOCOFFGRPINFO)
+            if(PICO_HAVE_NOCOFFGRPINFO)
+                target_link_options(PicoClicker PRIVATE /NOCOFFGRPINFO)
+            endif()
+        endif()
     endif()
 else()
     message(FATAL_ERROR "Use cl or clang-cl for the PicoClicker release build.")

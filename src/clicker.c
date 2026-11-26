@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <intrin.h>
 
 #include "resource.h"
 
@@ -693,6 +694,12 @@ done:
     return result;
 }
 
+#if defined(_M_IX86) || defined(_M_X64)
+// Zero-initialized storage keeps these CRT globals out of the file's raw data.
+__declspec(align(64)) UINT_PTR __security_cookie;
+UINT_PTR __security_cookie_complement;
+#endif
+
 void __cdecl __security_init_cookie(void);
 
 #ifdef PICOCLICKER_LITE
@@ -703,7 +710,26 @@ extern IMAGE_DOS_HEADER __ImageBase;
 // Initialize the cookie before entering any function that may have a protected stack frame.
 __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
 {
+#if defined(_M_IX86) || defined(_M_X64)
+#if defined(_M_IX86)
+    const UINT_PTR initialCookie = 0xBB40E64Eu;
+#else
+    const UINT_PTR initialCookie = 0x00002B992DDFA232ull;
+#endif
+
+    // Use the CRT's initial value only if the loader has left the cookie unset.
+    if (!__security_cookie)
+    {
+        __security_cookie = initialCookie;
+    }
+#endif
     __security_init_cookie();
+#if defined(_M_IX86) || defined(_M_X64)
+    if (!__security_cookie || __security_cookie == initialCookie)
+    {
+        __fastfail(FAST_FAIL_GS_COOKIE_INIT);
+    }
+#endif
 #ifdef PICOCLICKER_LITE
     ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
 #else

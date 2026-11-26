@@ -48,8 +48,8 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
         endif()
     endif()
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64" AND CMAKE_LINKER_TYPE MATCHES "^(LLD|MSVC)$")
-        # GuardMemcpy needs a copy target. Supply a small one instead of pulling in the CRT routine.
-        list(APPEND clicker_sources src/compact_memcpy.c)
+        # Supply a small GuardMemcpy target to builds using the CRT's full load config.
+        set(guard_memcpy_source src/compact_memcpy.c)
         set_property(SOURCE src/compact_memcpy.c APPEND PROPERTY COMPILE_OPTIONS /clang:-ffreestanding)
     endif()
     if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND (CMAKE_LINKER_TYPE STREQUAL "MSVC" OR
@@ -89,6 +89,13 @@ foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
     endif()
 endforeach()
 
+if(guard_memcpy_source)
+    target_sources(PicoClicker PRIVATE ${guard_memcpy_source})
+    if(CMAKE_LINKER_TYPE STREQUAL "MSVC")
+        target_sources(PicoClickerLite PRIVATE ${guard_memcpy_source})
+    endif()
+endif()
+
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
     # Reserve a prefix the size of the resource tree in the editions where sharing a
     # read-only section saves a file block. Keep the original resources until packing.
@@ -101,6 +108,10 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
         target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
         target_link_options(PicoClicker PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack)
+        # Lite has no calls through the optional GuardMemcpy or XFG slots.
+        target_sources(PicoClickerLite PRIVATE src/compact_load_config.c)
+        target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
+        target_link_options(PicoClickerLite PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack /MAP)
     endif()
 endif()
 

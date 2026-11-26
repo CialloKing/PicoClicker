@@ -59,6 +59,18 @@ try {
         if ($target.Name -eq 'x64' -and $pe -notmatch 'ExceptionTableSize: 0x[1-9A-F]') {
             throw 'x64 unwind data is missing.'
         }
+        if ($target.Name -eq 'x64' -and $target.Suffix -eq '-Lite' -and $pe -match 'LoadConfigTableSize: 0xC0\b') {
+            # EH continuation, XFG, CastGuard and GuardMemcpy need fields beyond the CFG prefix.
+            $flags = [regex]::Match($pe, 'GuardFlags \[ \(0x([0-9A-Fa-f]+)\)')
+            if (!$flags.Success -or ([Convert]::ToUInt32($flags.Groups[1].Value, 16) -band 0x03C00000)) {
+                throw 'Lite x64 needs the full load config for its guard flags.'
+            }
+            $map = Join-Path $folder 'PicoClicker-Lite.map'
+            $tailSlots = '\b__(guard_(memcpy_fptr|xfg_\w+_fptr)|castguard_check_failure_os_handled_fptr)\b'
+            if (Select-String -LiteralPath $map -Pattern $tailSlots -Quiet) {
+                throw 'Lite x64 links guard slots outside its compact load config.'
+            }
+        }
         if ($pe -notmatch 'Type: DIALOG \(ID 5\)' -or $pe -notmatch 'Type: MANIFEST \(ID 24\)') {
             throw "Missing dialog or manifest resource in $($executable.Name)."
         }

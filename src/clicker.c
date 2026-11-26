@@ -475,7 +475,7 @@ static void Toggle(HWND dialog)
     UINT interval = ReadInterval(dialog);
     if (interval == 0 || interval > 60000)
     {
-        SetControlText(dialog, IDC_STATUS, L"请输入 1–60000 ms。");
+        SetControlText(dialog, IDC_STATUS, L"间隔限1–60000ms");
         return;
     }
 
@@ -490,7 +490,7 @@ static void Toggle(HWND dialog)
     due.QuadPart = -(LONG)(interval * 10000u);
     if (!timer || !SetWaitableTimer(timer, &due, (LONG)interval, NULL, NULL, FALSE))
     {
-        SetControlText(dialog, IDC_STATUS, L"计时器启动失败。");
+        SetControlText(dialog, IDC_STATUS, L"计时器启动失败");
         return;
     }
 
@@ -517,7 +517,7 @@ static void Click(HWND dialog)
             // Try to release the button when only the down event made it into the stream.
             SendInput(1, &clickPair[1], sizeof(clickPair[1]));
         }
-        Stop(dialog, L"点击失败，已停止。");
+        Stop(dialog, L"点击失败");
     }
 }
 
@@ -623,7 +623,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
     HWND dialog = CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_MAIN), NULL, DialogProc, 0);
     if (!dialog)
     {
-        MessageBoxW(NULL, L"无法创建窗口。", L"PicoClicker", MB_ICONERROR);
+        MessageBoxW(NULL, L"窗口创建失败", L"PicoClicker", MB_ICONERROR);
         return 1;
     }
 
@@ -637,7 +637,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
         if (ready == WAIT_FAILED)
         {
             Stop(dialog, NULL);
-            MessageBoxW(dialog, L"计时等待失败，已停止。", L"PicoClicker", MB_ICONERROR);
+            MessageBoxW(dialog, L"计时失败", L"PicoClicker", MB_ICONERROR);
             DestroyWindow(dialog);
             break;
         }
@@ -709,5 +709,7 @@ __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
         __fastfail(FAST_FAIL_GS_COOKIE_INIT);
     }
 #endif
+    // Set awareness before creating the dialog so the embedded manifest only needs UAC.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
 }

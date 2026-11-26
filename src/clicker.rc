@@ -15,7 +15,7 @@ STYLE DS_CENTER | DS_SETFONT | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
 CAPTION "PicoClicker"
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "点击间隔 (ms)", -1, 7, 9, 59, 11
+    LTEXT "间隔 (ms)", -1, 7, 9, 59, 11
     // Initialize the interval in the resource without a startup API call.
     CONTROL "100", IDC_INTERVAL, "Edit", ES_NUMBER | ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 70, 7, 97, 14
 #ifndef PICOCLICKER_LITE
@@ -26,5 +26,6 @@ BEGIN
     AUTORADIOBUTTON "中键", IDC_MIDDLE, 60, 29 + HOTKEY_ROW_HEIGHT, 43, 11
     AUTORADIOBUTTON "右键", IDC_RIGHT, 114, 29 + HOTKEY_ROW_HEIGHT, 53, 11
     DEFPUSHBUTTON "开始", IDC_TOGGLE, 7, 45 + HOTKEY_ROW_HEIGHT, 160, 15, WS_GROUP
-    LTEXT "就绪", IDC_STATUS, 7, 65 + HOTKEY_ROW_HEIGHT, 160, 11
+    // WM_INITDIALOG fills this control with the actual hotkey status.
+    LTEXT "", IDC_STATUS, 7, 65 + HOTKEY_ROW_HEIGHT, 160, 11
 END

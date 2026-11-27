@@ -72,13 +72,21 @@ list(APPEND link_options
     /DYNAMICBASE /NXCOMPAT /GUARD:CF
 )
 
+option(PICOCLICKER_STANDARD_LOADER_COOKIE "Use the Windows loader's stack cookie in the standard targets" OFF)
 set(lite_targets PicoClickerLite)
+set(loader_cookie_targets)
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
     CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
+    if(PICOCLICKER_STANDARD_LOADER_COOKIE)
+        list(APPEND loader_cookie_targets PicoClicker PicoClickerLite)
+    endif()
     find_program(PICOCLICKER_POWERSHELL NAMES pwsh powershell)
     if(PICOCLICKER_POWERSHELL)
         list(APPEND lite_targets PicoClickerExperimentalImage)
+        list(APPEND loader_cookie_targets PicoClickerExperimentalImage)
     endif()
+elseif(PICOCLICKER_STANDARD_LOADER_COOKIE)
+    message(FATAL_ERROR "The standard loader cookie option requires x86 or x64 clang-cl and LLD.")
 endif()
 set(clicker_targets PicoClicker ${lite_targets})
 
@@ -143,14 +151,17 @@ foreach(clicker IN LISTS lite_targets)
 endforeach()
 set_target_properties(PicoClickerLite PROPERTIES OUTPUT_NAME PicoClicker-Lite)
 
+# The loader replaces the cookie sentinel for the modern subsystem version.
+foreach(clicker IN LISTS loader_cookie_targets)
+    target_compile_definitions(${clicker} PRIVATE PICOCLICKER_LOADER_COOKIE)
+    target_link_options(${clicker} PRIVATE /SUBSYSTEM:WINDOWS,6.03)
+endforeach()
+
 if(TARGET PicoClickerExperimentalImage)
     set_target_properties(PicoClickerExperimentalImage PROPERTIES
         EXCLUDE_FROM_ALL TRUE
         OUTPUT_NAME PicoClicker-Experimental-linked
     )
-    # Use the loader's mandatory cookie initialization with the modern subsystem version.
-    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_LOADER_COOKIE)
-    target_link_options(PicoClickerExperimentalImage PRIVATE /SUBSYSTEM:WINDOWS,6.03)
     get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
     set(experimental_dir "${CMAKE_CURRENT_BINARY_DIR}")
     if(multi_config)

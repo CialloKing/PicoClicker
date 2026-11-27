@@ -1,7 +1,10 @@
 // The experimental image resolves its unbound imports through FirstThunk.
+// Use the explicit .gfids list for CFG. The other calls are direct or use fixed IAT slots.
 #ifdef __i386__
 // The x86 assembly installs no SEH handlers.
-.set @feat.00, 1
+.set @feat.00, 0x801
+#else
+.set @feat.00, 0x800
 #endif
 
 .macro descriptor dll

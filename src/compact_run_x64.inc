@@ -1,3 +1,4 @@
+#include "compact_cookie.h"
 #include "resource.h"
 
 .intel_syntax noprefix
@@ -14,13 +15,13 @@
 .symidx DialogProc
 
 .text
-.globl Run
-.def Run
+.globl PicoClickerEntry
+.def PicoClickerEntry
     .scl 2
     .type 32
 .endef
-.seh_proc Run
-Run:
+.seh_proc PicoClickerEntry
+PicoClickerEntry:
     push rbx
     .seh_pushreg rbx
     push rsi
@@ -35,12 +36,26 @@ Run:
     .seh_stackalloc 112
     .seh_endprologue
 
-    // After the shadow space: fifth argument, wait result, MSG, then the /GS cookie.
-    mov rax, qword ptr [rip + __security_cookie]
-    xor rax, rsp
-    mov qword ptr [rsp + 96], rax
     // Center the IAT base so every call can use a signed-byte displacement.
     lea rbx, [rip + __imp_GetAncestor]
+    mov rsi, qword ptr [rip + __security_cookie]
+    test rsi, rsi
+    jz .Lbad_cookie
+    movabs rax, INITIAL_COOKIE
+    cmp rsi, rax
+    jne .Linitialize
+.Lbad_cookie:
+    mov ecx, 6                     // FAST_FAIL_GS_COOKIE_INIT
+    int 0x29
+.Linitialize:
+    mov rax, rsi
+    not rax
+    mov qword ptr [rip + __security_cookie_complement], rax
+    // After the shadow space: fifth argument, wait result, MSG, then the /GS cookie.
+    xor rsi, rsp
+    mov qword ptr [rsp + 96], rsi
+    mov ecx, -4                    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    call_import SetProcessDpiAwarenessContext
     lea rdx, [rip + .Ldialog_template]
     lea rsi, [rip + .Ldialog_encoding]
     mov rdi, rdx
@@ -159,14 +174,9 @@ Run:
     mov rcx, qword ptr [rsp + 96]
     xor rcx, rsp
     call __security_check_cookie
-    mov eax, esi
-    add rsp, 112
-    pop r12
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rbx
-    ret
+    mov ecx, esi
+    call_import ExitProcess
+    int3
 .seh_endproc
 
 .att_syntax prefix

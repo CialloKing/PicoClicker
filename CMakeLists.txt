@@ -106,8 +106,8 @@ foreach(clicker IN LISTS clicker_targets)
     target_link_options(${clicker} PRIVATE ${link_options})
     if(merge_pdata)
         if(clicker STREQUAL "PicoClickerExperimentalImage")
-            # Fit the runtime function table in the space already reserved by .text alignment.
-            target_link_options(${clicker} PRIVATE /MERGE:.pdata=.text)
+            # Fit the runtime function table and unwind records in the .text alignment space.
+            target_link_options(${clicker} PRIVATE /MERGE:.pdata=.text /MERGE:.xdata=.text)
         else()
             target_link_options(${clicker} PRIVATE /MERGE:.pdata=.rdata)
         endif()

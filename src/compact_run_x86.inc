@@ -167,7 +167,7 @@
 .Lreturn:
     mov ecx, dword ptr [esp + 36]
     xor ecx, esp
-    call "@__security_check_cookie@4"
+    call .Lcheck_cookie
     push esi
     call_import ExitProcess
     int3

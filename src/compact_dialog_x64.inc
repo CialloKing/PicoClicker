@@ -176,7 +176,7 @@ DialogProc:
 .Ldialog_return:
     mov rcx, qword ptr [rsp + 56]
     xor rcx, rsp
-    call __security_check_cookie
+    call .Lcheck_cookie
     mov eax, esi
     add rsp, 64
     pop rdi

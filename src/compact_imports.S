@@ -162,3 +162,23 @@ __imp_\name:
 #include "compact_run_x64.inc"
 #include "compact_dialog_x64.inc"
 #endif
+
+.intel_syntax noprefix
+.text
+// Both assembly frames check their decoded stack cookie before returning or exiting.
+// A mismatch still terminates through Windows FAST_FAIL_STACK_COOKIE_CHECK.
+.Lcheck_cookie:
+#ifdef __i386__
+    cmp ecx, dword ptr [ebp + ___security_cookie@IMGREL]
+#else
+    cmp rcx, qword ptr [rip + __security_cookie]
+    jne .Lcookie_failed
+    shr rcx, 48                    // Win64 cookies must have a zero high word.
+#endif
+    jne .Lcookie_failed
+    ret
+.Lcookie_failed:
+    mov ecx, 2                     // FAST_FAIL_STACK_COOKIE_CHECK
+    int 0x29
+    int3
+.att_syntax prefix

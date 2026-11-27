@@ -173,7 +173,7 @@ PicoClickerEntry:
 .Lreturn:
     mov rcx, qword ptr [rsp + 96]
     xor rcx, rsp
-    call __security_check_cookie
+    call .Lcheck_cookie
     mov ecx, esi
     call_import ExitProcess
     int3

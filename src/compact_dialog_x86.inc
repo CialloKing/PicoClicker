@@ -18,10 +18,10 @@
     cmp eax, 0x10                  // WM_CLOSE
     je .Lclose_message
     cmp eax, 2                     // WM_DESTROY
-    jne .Lignored
-    push 0
-    call dword ptr ["__imp__PostQuitMessage@4"]
-    jmp .Lhandled
+    je .Ldialog_enter
+.Lignored:
+    xor eax, eax
+    ret 16
 .Lcommand:
     mov edx, dword ptr [esp + 12]
     cmp edx, IDC_TOGGLE            // BN_CLICKED is zero
@@ -52,6 +52,8 @@
     jz .Lclose
     dec al
     jz .Ltoggle_message_body
+    cmp al, 1                     // WM_DESTROY after the decrement
+    je .Ldestroyed
 
     push 0
     push 1                         // BST_CHECKED
@@ -75,6 +77,10 @@
 .Ltoggle_message_body:
     call .Ltoggle
     jmp .Ldialog_leave
+.Ldestroyed:
+    push 0
+    call_import PostQuitMessage
+    jmp .Ldialog_leave
 .Lclose:
     xor edx, edx
     call .Lstop
@@ -85,14 +91,9 @@
     pop esi
     pop ebx
     pop ebp
-.Lhandled:
     push 1
     pop eax
     ret 16
-.Lignored:
-    xor eax, eax
-    ret 16
-
 // Both Run and the dialog call these helpers with ESI as HWND, EBX as IAT and EBP as image base.
 .Lstop:
     lea eax, [ebp + _picoRunData@IMGREL]
@@ -272,7 +273,7 @@
 .Ltoggle_return:
     mov ecx, dword ptr [esp + 8]
     xor ecx, esp
-    call "@__security_check_cookie@4"
+    call .Lcheck_cookie
     add esp, 12
     ret
 

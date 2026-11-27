@@ -185,6 +185,7 @@ if(TARGET PicoClickerExperimentalImage)
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
         set(import_triple i686-pc-windows-msvc)
         set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x86.inc")
+        set(dialog_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_dialog_x86.inc")
     else()
         set(import_triple x86_64-pc-windows-msvc)
         set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x64.inc")
@@ -205,7 +206,7 @@ if(TARGET PicoClickerExperimentalImage)
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${experimental_dir}"
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
             "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-ExperimentalAsm.asm" "${import_source}"
-        DEPENDS "${import_source}" "${run_source}" "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h"
+        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h"
         VERBATIM
     )
     target_sources(PicoClickerExperimentalImage PRIVATE "${import_object}")

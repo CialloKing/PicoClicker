@@ -114,6 +114,7 @@ __imp_\name:
 
 #ifdef __i386__
 #include "compact_run_x86.inc"
+#include "compact_dialog_x86.inc"
 #else
 #include "compact_run_x64.inc"
 #endif

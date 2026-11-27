@@ -13,6 +13,24 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 };
 #endif
 
+#if defined(PICOCLICKER_ASM_RUN) && defined(_M_IX86)
+#define PICOCLICKER_ASM_DIALOG
+#endif
+
+#ifdef PICOCLICKER_ASM_DIALOG
+// The x86 dialog keeps one base for the writable state and one for the IAT.
+struct PicoRunData
+{
+    UINT generation;
+    HANDLE timer;
+    LPCSTR idleStatus;
+    INPUT clickPair[2];
+} picoRunData;
+_Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
+    offsetof(struct PicoRunData, idleStatus) == 8 &&
+    offsetof(struct PicoRunData, clickPair) == 12 &&
+    offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
+#else
 #ifdef PICOCLICKER_ASM_RUN
 #define ASM_SHARED
 #define ASM_FASTCALL __fastcall
@@ -92,6 +110,7 @@ static void ShowRunState(HWND dialog, LPCTSTR status)
     SetControlText(dialog, IDC_TOGGLE, (runState & 1) ? PICO_TEXT("停止", "Stop") : PICO_TEXT("开始", "Start"));
     SetControlText(dialog, IDC_STATUS, status);
 }
+#endif
 
 #ifndef PICOCLICKER_LITE
 static BOOL SetHotkey(HWND dialog, UINT key, UINT modifiers)
@@ -448,6 +467,7 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 }
 #endif
 
+#ifndef PICOCLICKER_ASM_DIALOG
 ASM_FASTCALL void Stop(HWND dialog, LPCTSTR status)
 {
     if (runState & 1)
@@ -685,6 +705,7 @@ ASM_FASTCALL __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
 }
 #else
 #define ShowRunError(dialog, text) MessageBox((dialog), (text), L"PicoClicker", MB_ICONERROR)
+#endif
 #endif
 
 #if defined(PICOCLICKER_ASM_RUN) && defined(_M_IX86)

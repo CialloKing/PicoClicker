@@ -2,6 +2,13 @@
 
 .intel_syntax noprefix
 
+.set .Lgeneration, 0
+.set .Ltimer, 4
+.set .Lidle_status, 8
+.set .Lclick_pair, 12
+.set .Lmouse_flags, 16
+.set .Linput_size, 28
+
 .section .rdata,"dr"
 .Lui_error:
     .asciz "UI Err"
@@ -44,13 +51,13 @@
     lea edi, [esp + 8]
 
 .Lwait:
-    mov eax, dword ptr [ebp + _runState@IMGREL]
+    mov eax, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
     mov dword ptr [esp], eax
     and eax, 1
     push 4                         // MWMO_INPUTAVAILABLE
     push 0x1cff                    // QS_ALLINPUT
     push -1                        // INFINITE
-    lea edx, [ebp + _timer@IMGREL]
+    lea edx, [ebp + _picoRunData@IMGREL + .Ltimer]
     push edx
     push eax
     call_import MsgWaitForMultipleObjectsEx
@@ -92,7 +99,7 @@
     mov eax, dword ptr [esp]
     test al, 1
     jz .Lagain
-    cmp eax, dword ptr [ebp + _runState@IMGREL]
+    cmp eax, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
     je .Lclick
 .Lagain:
     jmp .Lwait
@@ -112,8 +119,8 @@
     // A press over the clicker's own window must not toggle its controls.
     cmp eax, esi
     je .Lagain
-    lea eax, [ebp + _clickPair@IMGREL]
-    push 28
+    lea eax, [ebp + _picoRunData@IMGREL + .Lclick_pair]
+    push .Linput_size
     push eax
     push 2
     call_import SendInput
@@ -122,31 +129,29 @@
     dec eax
     jnz .Lclick_failed
     // Release the button if SendInput accepted only the press.
-    lea eax, [ebp + _clickPair@IMGREL + 28]
-    push 28
+    lea eax, [ebp + _picoRunData@IMGREL + .Lclick_pair + .Linput_size]
+    push .Linput_size
     push eax
     push 1
     call_import SendInput
 .Lclick_failed:
-    mov ecx, esi
     lea edx, [ebp + .Lclick_error@IMGREL]
-    call "@Stop@8"
+    call .Lstop
     jmp .Lwait
 
 .Lwait_failed:
-    mov ecx, esi
     xor edx, edx
-    call "@Stop@8"
+    call .Lstop
     mov ecx, esi
-    lea edx, [ebp + _PicoTimerError@IMGREL]
-    call "@ShowRunError@8"
+    lea edx, [ebp + .Ltimer_error@IMGREL]
+    call .Lrun_error
     push esi
     call_import DestroyWindow
     jmp .Lfailed
 .Lui_failed:
     xor ecx, ecx
     lea edx, [ebp + .Lui_error@IMGREL]
-    call "@ShowRunError@8"
+    call .Lrun_error
 .Lfailed:
     push 1
     pop esi

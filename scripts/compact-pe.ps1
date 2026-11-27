@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string] $Executable
+    [string] $Executable,
+    [switch] $AllowResourceGrowth
 )
 
 $ErrorActionPreference = 'Stop'
@@ -157,14 +158,17 @@ for ($index = 0; $index -lt $relocations.Size; $index += $blockSize) {
     }
 }
 
-# The directory can live in the unused tail of the read-only section at a DWORD boundary.
+# Keep the directory DWORD-aligned. The experimental resource section is the last
+# retained section, so its raw data can grow within its original virtual pages.
 $tableOffset = [int]([Math]::Ceiling($constants.Size / 4.0) * 4)
 $tableEnd = $tableOffset + $relocations.Size
+$growth = 0
 if ($tableEnd -gt $constants.RawSize) {
-    return
+    if (!$AllowResourceGrowth -or !$packResources -or $tableEnd -gt $removed.RVA - $constants.RVA) { return }
+    $growth = [int]([Math]::Ceiling($tableEnd / 512.0) * 512) - $constants.RawSize
 }
 
-for ($index = $constants.Size; $index -lt $tableEnd; $index++) {
+for ($index = $constants.Size; $index -lt [Math]::Min($tableEnd, $constants.RawSize); $index++) {
     if ($image[$constants.RawOffset + $index] -ne 0) {
         return
     }
@@ -187,16 +191,17 @@ if ($packResources) {
 $headerSize = 512
 $shift = $headers - $headerSize
 $constantStart = $constants.RawOffset - $shift
-[byte[]] $output = [byte[]]::new($removed.RawOffset - $shift)
+[byte[]] $output = [byte[]]::new($removed.RawOffset - $shift + $growth)
 [Array]::Copy($image, 0, $output, 0, $headerSize)
 [Array]::Copy($image, $headers, $output, $headerSize, $removed.RawOffset - $headers)
 [Array]::Copy($image, $relocations.RawOffset, $output, $constantStart + $tableOffset, $relocations.Size)
 [Array]::Clear($output, $removed.Header, $headerSize - $removed.Header)
 [BitConverter]::GetBytes([uint16]$keptCount).CopyTo($output, $pe + 6)
-Write-U32 ($optional + 8) ($initialized - ($rawEnd - $removed.RawOffset))
+Write-U32 ($optional + 8) ($initialized - ($rawEnd - $removed.RawOffset) + $growth)
 Write-U32 ($optional + 56) $removed.RVA
 Write-U32 ($optional + 60) $headerSize
 Write-U32 ($constants.Header + 8) $tableEnd
+Write-U32 ($constants.Header + 16) ($constants.RawSize + $growth)
 Write-U32 $relocDirectory ($constants.RVA + $tableOffset)
 foreach ($section in ($sections | Select-Object -First $keptCount)) {
     if ($section.RawOffset) {

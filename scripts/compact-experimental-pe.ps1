@@ -15,7 +15,7 @@ if ($source -ieq $destination) {
 $temporary = "$destination.$([Guid]::NewGuid().ToString('N')).tmp"
 try {
     [IO.File]::Copy($source, $temporary)
-    & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $temporary | Out-Null
+    & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $temporary -AllowResourceGrowth | Out-Null
     [byte[]] $image = [IO.File]::ReadAllBytes($temporary)
     $pe = 64
     $optional = $pe + 24

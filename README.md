@@ -54,16 +54,18 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 
 实验版沿用 Lite 的固定 F1 快捷键，提供极简英文界面。运行时文本使用 ASCII，窗口和控件消息使用 ANSI Win32 API。
 
+连点时可以编辑间隔和切换鼠标按键，改动在下次启动连点时生效。主窗口省去了 Tab 切换焦点、方向键切换单选项、Enter 激活默认按钮和 Esc 关闭窗口的对话框快捷键。可直接键入数字，用鼠标选择按键，用 F1 或界面按钮启停，点击标题栏关闭按钮退出。[Microsoft 对话框键盘行为](https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgbox-programming-considerations#dialog-box-keyboard-interface)
+
 两种架构都从 `clicker.rc` 生成对话框模板，启动时把紧凑编码还原为原始模板，再交由 `CreateDialogIndirectParamA` 创建窗口。实验版成品省去 PE 资源目录。[Microsoft 对话框 API](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createdialogindirectparama)
 
 实验版由 Windows 加载器初始化栈保护 Cookie，用同一张表查找和接收导入地址。两种架构都用手写汇编处理窗口回调、等待和点击，x64 带有异常展开信息。打包会裁掉磁盘上最后一个节的填充，并可将部分导入名称和重定位表放入 PE 文件头或代码节的填充区。部分 Windows 版本或 PE 工具可能拒绝该布局。使用 LLVM 22.1.8 的 `llvm-readobj` 检查导入表和重定位时，可读取 `PicoClicker-Experimental-linked.exe`。[Microsoft PE 格式规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
 
 | 架构 | 打包后的 Lite | 实验性极简版 |
 | --- | ---: | ---: |
-| x86 | 4,096 字节 | 2,298 字节 |
-| x64 | 5,120 字节 | 2,755 字节 |
+| x86 | 4,096 字节 | 2,216 字节 |
+| x64 | 5,120 字节 | 2,678 字节 |
 
-两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#消息分支与导入名称排序)
+两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、运行中编辑、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#运行中编辑与对话框消息精简)
 
 ## 本地候选
 

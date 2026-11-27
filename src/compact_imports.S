@@ -87,14 +87,18 @@ __imp_\name:
     end_iat
 
 .Luser_iat:
+#ifdef __x86_64__
     import DestroyWindow, 4
+#endif
     import DispatchMessageA, 4
     import GetAncestor, 8
     import GetCursorPos, 4
     import MessageBoxA, 16
     import MsgWaitForMultipleObjectsEx, 20
     import PeekMessageA, 20
+#ifdef __x86_64__
     import PostQuitMessage, 4
+#endif
     import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4

@@ -27,6 +27,7 @@ struct PicoRunData
     INPUT clickPair[2];
 #ifdef _M_IX86
     BYTE selectedButton;
+    BYTE closing;
 #endif
 } picoRunData;
 #ifdef _M_IX86
@@ -34,6 +35,7 @@ _Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
     offsetof(struct PicoRunData, idleStatus) == 8 &&
     offsetof(struct PicoRunData, clickPair) == 12 &&
     offsetof(struct PicoRunData, selectedButton) == 68 &&
+    offsetof(struct PicoRunData, closing) == 69 &&
     offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
 #else
 _Static_assert(offsetof(struct PicoRunData, selectedButton) == 4 &&

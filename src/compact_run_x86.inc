@@ -10,6 +10,7 @@
 .set .Lmouse_flags, 16
 .set .Linput_size, 28
 .set .Lselected_button, 68
+.set .Lclosing, 69
 
 // The dialog manager calls this address, which the assembly builds from its RVA.
 .section .gfids$y,"dr"
@@ -46,9 +47,9 @@
     mov edi, edx
     decode_dialog
     lea eax, [ebp + "_DialogProc@16"@IMGREL]
-    push 0
+    push ecx                       // A complete decode leaves the LOOP counter zero.
     push eax
-    push 0
+    push ecx
     push edx
     push ebp
     call_import CreateDialogIndirectParamA
@@ -99,6 +100,8 @@
     jnz .Lpeek
 
 .Lcheck_tick:
+    cmp byte ptr [edi + .Lclosing], 0
+    jne .Lclosed
     // A stop or restart invalidates the signal from the earlier timer generation.
     mov eax, dword ptr [esp]
     test al, 1
@@ -159,6 +162,9 @@
     call_import MessageBoxA        // ExitProcess releases the dialog after the error.
     push 1
     pop esi
+    jmp .Lreturn
+.Lclosed:
+    xor esi, esi
     jmp .Lreturn
 .Lquit:
     mov esi, dword ptr [ebp + 8]

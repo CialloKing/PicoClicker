@@ -16,27 +16,32 @@
     cmp eax, 0x110                 // WM_INITDIALOG
     je .Ldialog_enter
     cmp eax, 0x10                  // WM_CLOSE
-    je .Lclose_message
+    je .Lclosing_dialog
     cmp eax, 2                     // WM_DESTROY
-    je .Ldialog_enter
+    je .Lclosing_dialog
 .Lignored:
     xor eax, eax
     ret 16
+.Lclosing_dialog:
+    // The loop exits before another click. ExitProcess tears down the window,
+    // hotkey and timer together after the callback returns.
+    mov byte ptr [_picoRunData + .Lclosing], 1
+    jmp .Lhandled
 .Lcommand:
+    .if IDC_TOGGLE != IDC_RIGHT + 1
+        .error "The toggle ID must follow the mouse button IDs"
+    .endif
     mov eax, dword ptr [esp + 12]
-    cmp eax, IDC_TOGGLE             // BN_CLICKED is zero.
-    je .Ltoggle_message
     sub eax, IDC_LEFT
-    cmp eax, IDC_RIGHT - IDC_LEFT
+    cmp eax, IDC_TOGGLE - IDC_LEFT  // BN_CLICKED is zero.
+    je .Ltoggle_message
     ja .Lignored
     // The active click pair continues to use the selection captured at start.
     mov byte ptr [_picoRunData + .Lselected_button], al
+.Lhandled:
     push 1
     pop eax
     ret 16
-.Lclose_message:
-    xor eax, eax
-    jmp .Ldialog_enter
 .Lhotkey:
     cmp dword ptr [esp + 12], ID_HOTKEY
     jne .Lignored
@@ -50,12 +55,8 @@
     mov esi, dword ptr [esp + 36]
     mov ebx, offset .Lkernel_iat
     mov edi, offset _picoRunData
-    test al, al
-    jz .Lclose
-    dec al
-    jz .Ltoggle_message_body
-    cmp al, 1                     // WM_DESTROY after the decrement
-    je .Ldestroyed
+    cmp al, 1
+    je .Ltoggle_message_body
 
     push 0
     push 1                         // BST_CHECKED
@@ -78,16 +79,6 @@
     jmp .Ldialog_leave
 .Ltoggle_message_body:
     call .Ltoggle
-    jmp .Ldialog_leave
-.Ldestroyed:
-    push 0
-    call_import PostQuitMessage
-    jmp .Ldialog_leave
-.Lclose:
-    xor edx, edx
-    call .Lstop
-    push esi
-    call_import DestroyWindow
 .Ldialog_leave:
     popad
     push 1

@@ -63,9 +63,9 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 | 架构 | 打包后的 Lite | 实验性极简版 |
 | --- | ---: | ---: |
 | x86 | 4,096 字节 | 2,042 字节 |
-| x64 | 5,120 字节 | 2,543 字节 |
+| x64 | 5,120 字节 | 2,441 字节 |
 
-两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、运行中编辑、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#x86-压到-2-kib-以内)
+两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、运行中编辑、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#v0416-的-x64-优化)
 
 ## 本地候选
 

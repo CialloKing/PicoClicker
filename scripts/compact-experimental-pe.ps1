@@ -51,8 +51,8 @@ try {
         throw 'Unexpected on-disk layout in the compact Lite PE.'
     }
 
-    # The base relocation directory has no references from application code. If
-    # it fills the resource tail, try placing it in the existing .text padding.
+    # Base relocations have no references from application code. Compare keeping
+    # them at the resource tail, moving them into .text padding or using the headers.
     $reloc = $directories + 5 * 8
     $relocRva = [BitConverter]::ToUInt32($image, $reloc)
     $relocSize = [BitConverter]::ToUInt32($image, $reloc + 4)
@@ -60,12 +60,33 @@ try {
     $codeEnd = $copyStart + $relocSize
     $initialized = [BitConverter]::ToUInt32($image, $optional + 8)
     if ($relocSize -and $relocRva -gt $resources.Rva -and
-        $relocRva + $relocSize -eq $resources.Rva + $resources.Size -and $codeEnd -le $text.RawSize) {
+        $relocRva + $relocSize -eq $resources.Rva + $resources.Size) {
         $resourceEnd = $relocRva - $resources.Rva
         $resourceRawSize = [int]([Math]::Ceiling($resourceEnd / 512.0) * 512)
-        $originalSize = [Math]::Min($text.RawSize + $resources.Size, $resources.RawSize + $text.Size)
-        $candidateSize = [Math]::Min($text.RawSize + $resourceEnd, $resourceRawSize + $codeEnd)
-        if ($candidateSize -lt $originalSize) {
+        $bestSize = [Math]::Min($text.RawSize + $resources.Size, $resources.RawSize + $text.Size)
+        $placement = $null
+        $inCode = [Math]::Min($text.RawSize + $resourceEnd, $resourceRawSize + $codeEnd)
+        if ($codeEnd -le $text.RawSize -and $inCode -lt $bestSize) {
+            $placement = 'code'
+            $bestSize = $inCode
+        }
+
+        $inHeaders = [Math]::Min($text.RawSize + $resourceEnd, $resourceRawSize + $text.Size)
+        $directoryCount = 16
+        $newTable = $table
+        if ($inHeaders -lt $bestSize) {
+            # Drop only as many empty trailing directories as needed. Keep the IAT directory.
+            while ($newTable + 120 + $relocSize -gt $headers -and $directoryCount -gt 13 -and
+                [BitConverter]::ToUInt64($image, $newTable - 8) -eq 0) {
+                $newTable -= 8
+                $directoryCount--
+            }
+            if ($newTable + 120 + $relocSize -le $headers) {
+                $placement = 'headers'
+            }
+        }
+
+        if ($placement) {
             for ($index = 0; $index -lt 16; $index++) {
                 if ($index -eq 5) { continue }
                 $start = [BitConverter]::ToUInt32($image, $directories + 8 * $index)
@@ -76,10 +97,24 @@ try {
             }
 
             $sourceOffset = $resources.Offset + $resourceEnd
-            [Array]::Copy($image, $sourceOffset, $image, $text.Offset + $copyStart, $relocSize)
+            if ($placement -ceq 'headers') {
+                $headerEnd = $newTable + 120
+                [Array]::Copy($image, $table, $image, $newTable, 120)
+                [Array]::Clear($image, $headerEnd, $headers - $headerEnd)
+                foreach ($section in $sections) {
+                    $section.Header -= $table - $newTable
+                }
+                [BitConverter]::GetBytes([uint16]($newTable - $optional)).CopyTo($image, $pe + 20)
+                Write-U32 $image ($directories - 4) $directoryCount
+                $destinationOffset = $destinationRva = $headerEnd
+            } else {
+                $destinationOffset = $text.Offset + $copyStart
+                $destinationRva = $text.Rva + $copyStart
+                $text.Size = $codeEnd
+            }
+            [Array]::Copy($image, $sourceOffset, $image, $destinationOffset, $relocSize)
             [Array]::Clear($image, $sourceOffset, $resources.RawSize - $resourceEnd)
-            Write-U32 $image $reloc ($text.Rva + $copyStart)
-            $text.Size = $codeEnd
+            Write-U32 $image $reloc $destinationRva
             $resources.Size = $resourceEnd
             $initialized -= $resources.RawSize - $resourceRawSize
             $resources.RawSize = $resourceRawSize

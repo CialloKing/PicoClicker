@@ -52,7 +52,18 @@ try {
             throw "$($executable.FullName) is $($executable.Length) bytes. Budget is $($target.MaxSize) bytes."
         }
 
-        $pe = (& $reader --file-headers --coff-imports --coff-load-config --coff-resources $executable.FullName) -join [Environment]::NewLine
+        $inspectedImage = $executable.FullName
+        if ($experimental) {
+            # LLVM's reader expects the relocation RVA to be inside a section. Verify
+            # the staged bytes by reproducing them from the linked image that LLVM reads.
+            $inspectedImage = Join-Path $folder 'PicoClicker-Experimental-linked.exe'
+            $repacked = Join-Path $staging.FullName "repacked-$($target.Name).exe"
+            & (Join-Path $PSScriptRoot 'compact-experimental-pe.ps1') -Executable $inspectedImage -OutputFile $repacked | Out-Null
+            if ((Get-FileHash -LiteralPath $repacked).Hash -ne (Get-FileHash -LiteralPath $stagedPath).Hash) {
+                throw "$($executable.Name) differs from the linked image after packing. Rebuild the experimental target."
+            }
+        }
+        $pe = (& $reader --file-headers --coff-imports --coff-load-config --coff-resources $inspectedImage) -join [Environment]::NewLine
         if ($LASTEXITCODE -ne 0 -or $pe -notmatch "Machine: $($machines[$target.Name])\b") {
             throw "Unexpected PE architecture in $($executable.FullName)"
         }

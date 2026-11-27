@@ -2,17 +2,15 @@
 
 .intel_syntax noprefix
 
-// COFF x86 address operands need the imm32 form of PUSH.
-.macro push_address address
-    .byte 0x68
-    .long \address
-.endm
-
 .section .rdata,"dr"
 .Lui_error:
     .asciz "UI Err"
 .Lclick_error:
     .asciz "Click Err"
+
+// The dialog manager calls this address, which the assembly builds from its RVA.
+.section .gfids$y,"dr"
+.symidx "_DialogProc@16"
 
 .text
 .globl "@Run@4"
@@ -26,16 +24,19 @@
     push edi
     push ebp
     sub esp, 40
-    // Two DWORDs, MSG, then the same stack-cookie encoding used by clang-cl.
-    mov eax, dword ptr [___security_cookie]
+    // Use the passed module base and image-relative references to avoid base fixups.
+    mov ebp, ecx
+    // Timer generation and drain counter, then MSG and the /GS cookie.
+    mov eax, dword ptr [ebp + ___security_cookie@IMGREL]
     xor eax, esp
     mov dword ptr [esp + 36], eax
-    mov ebx, offset .Lkernel_iat
+    lea ebx, [ebp + .Lkernel_iat@IMGREL]
+    lea eax, [ebp + "_DialogProc@16"@IMGREL]
     push 0
-    push_address "_DialogProc@16"
+    push eax
     push 0
     push IDD_MAIN
-    push ecx
+    push ebp
     call_import CreateDialogParamA
     test eax, eax
     jz .Lui_failed
@@ -43,20 +44,24 @@
     lea edi, [esp + 8]
 
 .Lwait:
-    mov eax, dword ptr [_runState]
+    mov eax, dword ptr [ebp + _runState@IMGREL]
     mov dword ptr [esp], eax
     and eax, 1
     push 4                         // MWMO_INPUTAVAILABLE
     push 0x1cff                    // QS_ALLINPUT
     push -1                        // INFINITE
-    push_address _timer
+    lea edx, [ebp + _timer@IMGREL]
+    push edx
     push eax
     call_import MsgWaitForMultipleObjectsEx
     inc eax
     jz .Lwait_failed               // WAIT_FAILED was -1
-    mov dword ptr [esp + 4], eax
-    push 32
-    pop ebp
+    dec eax
+    jz .Lstart_drain               // WAIT_OBJECT_0
+    // Clear the snapshot's active bit when this wait did not signal the timer.
+    and byte ptr [esp], -2
+.Lstart_drain:
+    mov byte ptr [esp + 4], 32
 .Lpeek:
     push 1                         // PM_REMOVE
     xor eax, eax
@@ -79,17 +84,15 @@
     push edi
     call_import DispatchMessageA
 .Ldrain:
-    dec ebp
+    dec byte ptr [esp + 4]
     jnz .Lpeek
 
 .Lcheck_tick:
     // A stop or restart invalidates the signal from the earlier timer generation.
-    cmp dword ptr [esp + 4], 1     // WAIT_OBJECT_0 before the increment
-    jne .Lagain
     mov eax, dword ptr [esp]
     test al, 1
     jz .Lagain
-    cmp eax, dword ptr [_runState]
+    cmp eax, dword ptr [ebp + _runState@IMGREL]
     je .Lclick
 .Lagain:
     jmp .Lwait
@@ -109,8 +112,9 @@
     // A press over the clicker's own window must not toggle its controls.
     cmp eax, esi
     je .Lagain
+    lea eax, [ebp + _clickPair@IMGREL]
     push 28
-    push_address _clickPair
+    push eax
     push 2
     call_import SendInput
     cmp eax, 2
@@ -118,13 +122,14 @@
     dec eax
     jnz .Lclick_failed
     // Release the button if SendInput accepted only the press.
+    lea eax, [ebp + _clickPair@IMGREL + 28]
     push 28
-    push_address _clickPair+28
+    push eax
     push 1
     call_import SendInput
 .Lclick_failed:
     mov ecx, esi
-    mov edx, offset .Lclick_error
+    lea edx, [ebp + .Lclick_error@IMGREL]
     call "@Stop@8"
     jmp .Lwait
 
@@ -133,14 +138,14 @@
     xor edx, edx
     call "@Stop@8"
     mov ecx, esi
-    mov edx, offset _PicoTimerError
+    lea edx, [ebp + _PicoTimerError@IMGREL]
     call "@ShowRunError@8"
     push esi
     call_import DestroyWindow
     jmp .Lfailed
 .Lui_failed:
     xor ecx, ecx
-    mov edx, offset .Lui_error
+    lea edx, [ebp + .Lui_error@IMGREL]
     call "@ShowRunError@8"
 .Lfailed:
     push 1

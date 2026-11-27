@@ -1,10 +1,13 @@
 // The experimental image resolves its unbound imports through FirstThunk.
 // Use the explicit .gfids list for CFG. The other calls are direct or use fixed IAT slots.
+// Make the omitted guard counts visible to pack.ps1 without allocating bytes for them.
 #ifdef __i386__
 // The x86 assembly installs no SEH handlers.
 .set @feat.00, 0x801
+.globl ___guard_iat_count, ___guard_longjmp_count
 #else
 .set @feat.00, 0x800
+.globl __guard_iat_count, __guard_longjmp_count
 #endif
 
 .macro descriptor dll

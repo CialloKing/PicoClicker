@@ -83,7 +83,7 @@ try {
         if ($target.Name -eq 'x64' -and $pe -notmatch 'ExceptionTableSize: 0x[1-9A-F]') {
             throw 'x64 unwind data is missing.'
         }
-        if ($target.Name -eq 'x64' -and $pe -match 'LoadConfigTableSize: 0xC0\b') {
+        if ($experimental -or ($target.Name -eq 'x64' -and $pe -match 'LoadConfigTableSize: 0xC0\b')) {
             # EH continuation, XFG, CastGuard and GuardMemcpy need fields beyond the CFG prefix.
             $flags = [regex]::Match($pe, 'GuardFlags \[ \(0x([0-9A-Fa-f]+)\)')
             if (!$flags.Success -or ([Convert]::ToUInt32($flags.Groups[1].Value, 16) -band 0x03C00000)) {
@@ -91,6 +91,18 @@ try {
             }
             $mapSuffix = if ($experimental) { '-Experimental-linked' } else { $target.Suffix }
             $map = Join-Path $folder "PicoClicker$mapSuffix.map"
+            if ($experimental) {
+                $loadConfigSize = if ($target.Name -eq 'x64') { '98' } else { '5C' }
+                if ($pe -notmatch "LoadConfigTableSize: 0x$loadConfigSize\b" -or
+                    ([Convert]::ToUInt32($flags.Groups[1].Value, 16) -band 0x10000)) {
+                    throw "$($executable.Name) has inconsistent experimental load config flags or size."
+                }
+                foreach ($count in 'guard_iat_count', 'guard_longjmp_count') {
+                    if (!(Select-String -LiteralPath $map -Pattern "^\s*0000:00000000\s+_+$count\s+0+\s+<absolute>\s*$" -Quiet)) {
+                        throw "$($executable.Name) needs a load config field for $count."
+                    }
+                }
+            }
             $tailSlots = '\b__(guard_(memcpy_fptr|xfg_\w+_fptr)|castguard_check_failure_os_handled_fptr)\b'
             if (Select-String -LiteralPath $map -Pattern $tailSlots -Quiet) {
                 throw "$($executable.Name) links guard slots outside its compact load config."

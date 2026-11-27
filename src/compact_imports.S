@@ -75,7 +75,6 @@ __imp_\name:
     end_iat
 
 .Luser_iat:
-    import CreateDialogIndirectParamA, 20
     import DestroyWindow, 4
     import DispatchMessageA, 4
     import EnableWindow, 8
@@ -92,6 +91,8 @@ __imp_\name:
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     import TranslateMessage, 4
+    // Together with the DLL names, these trailing names fill the PE header space.
+    import CreateDialogIndirectParamA, 20
     import WindowFromPoint, 8
     end_iat
 

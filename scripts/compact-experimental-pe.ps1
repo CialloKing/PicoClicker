@@ -16,6 +16,148 @@ function Write-U32([byte[]] $buffer, [int] $offset, [uint32] $value) {
     [BitConverter]::GetBytes($value).CopyTo($buffer, $offset)
 }
 
+function Get-ImportName([byte[]] $image, [int] $field, [long] $rva, [int] $hintSize, $readOnly, [long] $iatEnd) {
+    if ($rva -lt $iatEnd -or $rva + $hintSize -ge $readOnly.Rva + $readOnly.Size) { return }
+    $offset = [int]($readOnly.Offset + $rva - $readOnly.Rva)
+    $start = $offset + $hintSize
+    $limit = $readOnly.Offset + $readOnly.Size
+    $nul = [Array]::IndexOf($image, [byte]0, $start, $limit - $start)
+    if ($nul -le $start) { return }
+    [pscustomobject]@{ Field = $field; Start = $rva; End = $rva + $nul - $offset + 1 }
+}
+
+function Get-ImportNames([byte[]] $image, [int] $directories, $readOnly, [int] $width) {
+    $importRva = [BitConverter]::ToUInt32($image, $directories + 8)
+    $importSize = [BitConverter]::ToUInt32($image, $directories + 12)
+    $iat = [BitConverter]::ToUInt32($image, $directories + 96)
+    $iatSize = [BitConverter]::ToUInt32($image, $directories + 100)
+    $iatEnd = $iat + $iatSize
+    if ($importSize -ne 60 -or $importRva -lt $readOnly.Rva -or $importRva + $importSize -gt $iat -or
+        !$iatSize -or $iatSize % $width -or $iatEnd -gt $readOnly.Rva + $readOnly.Size) { return }
+
+    # The hand-built descriptors share their IAT with the loader's lookup table.
+    $bias = [long]$readOnly.Offset - $readOnly.Rva
+    $names = [Collections.Generic.List[object]]::new()
+    for ($dll = 0; $dll -lt 2; $dll++) {
+        $descriptor = $bias + $importRva + 20 * $dll
+        if ([BitConverter]::ToUInt64($image, $descriptor) -or
+            [BitConverter]::ToUInt32($image, $descriptor + 8) -or
+            [BitConverter]::ToUInt32($image, $descriptor + 16) -ne $iat) { return }
+        $dllName = Get-ImportName $image ($descriptor + 12) ([BitConverter]::ToUInt32($image, $descriptor + 12)) 0 $readOnly $iatEnd
+        if (!$dllName) { return }
+        $names.Add($dllName)
+        do {
+            if ($iat -ge $iatEnd) { return }
+            $slot = $bias + $iat
+            $iat += $width
+            $nameRva = if ($width -eq 8) { [BitConverter]::ToUInt64($image, $slot) } else { [BitConverter]::ToUInt32($image, $slot) }
+            if (!$nameRva) { break }
+            if ($nameRva -gt [int]::MaxValue) { return }
+            $name = Get-ImportName $image $slot $nameRva 2 $readOnly $iatEnd
+            if (!$name) { return }
+            $names.Add($name)
+        } while ($true)
+    }
+    $descriptor = $bias + $importRva + 40
+    if ($iat -ne $iatEnd -or ($image[$descriptor..($descriptor + 19)] -ne 0)) { return }
+    $names | Sort-Object Start
+}
+
+function Move-ImportNameTail([byte[]] $image, [int] $optional, [int] $directories, [int] $headers, $sections, $readOnly) {
+    $reloc = $directories + 40
+    $relocRva = [BitConverter]::ToUInt32($image, $reloc)
+    $relocSize = [BitConverter]::ToUInt32($image, $reloc + 4)
+    $text = $sections[0]
+    $table = $text.Header
+    $headerEnd = $table + 120
+    $headerUsed = $headerEnd
+    if ($relocRva -eq $headerEnd) {
+        $headerUsed += $relocSize
+    } elseif ($relocRva -lt $text.Rva -or $relocRva + $relocSize -gt $text.Rva + $text.Size) {
+        return 0
+    }
+    $width = if ([BitConverter]::ToUInt16($image, $optional) -eq 0x20b) { 8 } else { 4 }
+    $names = @(Get-ImportNames $image $directories $readOnly $width)
+    if ($names.Count -lt 2 -or $headerUsed -ge $headers -or ($image[$headerUsed..($headers - 1)] -ne 0)) { return 0 }
+
+    $bias = [long]$readOnly.Offset - $readOnly.Rva
+    $end = ($names.End | Measure-Object -Maximum).Maximum
+    $limit = $readOnly.Rva + $readOnly.Size
+    if ($end -gt $limit -or $limit - $end -gt 3 -or
+        ($end -lt $limit -and ($image[($bias + $end)..($bias + $limit - 1)] -ne 0))) { return 0 }
+
+    $minimumTable = $table
+    $minimumDirectories = [BitConverter]::ToUInt32($image, $directories - 4)
+    while ($minimumDirectories -gt 13 -and [BitConverter]::ToUInt64($image, $minimumTable - 8) -eq 0) {
+        $minimumTable -= 8
+        $minimumDirectories--
+    }
+
+    $first = $names.Count - 1
+    $capacity = $headers - $headerUsed + $table - $minimumTable
+    for (; $first -gt 0; $first--) {
+        $start = $names[$first].Start
+        # Preserve the Hint/Name word alignment, including a shared preceding terminator.
+        if ($end - $start + ($start -band 1) -gt $capacity) { break }
+    }
+    $first++
+    if ($first -ge $names.Count) { return 0 }
+    $start = $names[$first].Start
+    $cut = [Math]::Max($start, ($names[0..($first - 1)].End | Measure-Object -Maximum).Maximum)
+    $size = $cut - $readOnly.Rva
+    $rawSize = [int]([Math]::Ceiling($size / 512.0) * 512)
+    if ([Math]::Min($text.RawSize + $size, $rawSize + $text.Size) -ge
+        [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)) { return 0 }
+
+    $covered = $start
+    foreach ($name in $names[$first..($names.Count - 1)]) {
+        if ($name.Start -gt $covered -and ($image[($bias + $covered)..($bias + $name.Start - 1)] -ne 0)) { return 0 }
+        $covered = [Math]::Max($covered, $name.End)
+    }
+    for ($entry = $directories; $entry -lt $minimumTable; $entry += 8) {
+        $rva = [BitConverter]::ToUInt32($image, $entry)
+        $length = [BitConverter]::ToUInt32($image, $entry + 4)
+        if ($length -and $rva -lt $limit -and $rva + $length -gt $cut) { return 0 }
+    }
+    $relocOffset = if ($relocRva -lt $headers) { $relocRva } else { $text.Offset + $relocRva - $text.Rva }
+    for ($block = $relocOffset; $block -lt $relocOffset + $relocSize; $block += $blockSize) {
+        $page = [BitConverter]::ToUInt32($image, $block)
+        $blockSize = [BitConverter]::ToUInt32($image, $block + 4)
+        if ($blockSize -lt 8 -or $blockSize % 4 -or $block + $blockSize -gt $relocOffset + $relocSize) { return 0 }
+        for ($index = $block + 8; $index -lt $block + $blockSize; $index += 2) {
+            $fixup = [BitConverter]::ToUInt16($image, $index)
+            $rva = $page + ($fixup -band 0xfff)
+            if (($fixup -shr 12) -and $rva + $width -gt $cut -and $rva -lt $limit) { return 0 }
+        }
+    }
+
+    $shift = 0
+    $target = $headerUsed + ($start -band 1)
+    while ($target + $end - $start -gt $headers) {
+        $shift += 8
+        $target -= 8
+    }
+    if ($shift) {
+        [Array]::Copy($image, $table, $image, $table - $shift, $headerUsed - $table)
+        [Array]::Clear($image, $headerUsed - $shift, $headers - $headerUsed + $shift)
+        foreach ($section in $sections) { $section.Header -= $shift }
+        $optionalSize = [BitConverter]::ToUInt16($image, $optional - 4)
+        [BitConverter]::GetBytes([uint16]($optionalSize - $shift)).CopyTo($image, $optional - 4)
+        $count = [BitConverter]::ToUInt32($image, $directories - 4)
+        Write-U32 $image ($directories - 4) ($count - $shift / 8)
+        if ($relocRva -eq $headerEnd) { Write-U32 $image $reloc ($relocRva - $shift) }
+    }
+    [Array]::Copy($image, $bias + $start, $image, $target, $end - $start)
+    foreach ($name in $names[$first..($names.Count - 1)]) {
+        Write-U32 $image $name.Field ($target + $name.Start - $start)
+    }
+    [Array]::Clear($image, $bias + $cut, $readOnly.RawSize - $size)
+    $saved = $readOnly.RawSize - $rawSize
+    $readOnly.Size = $size
+    $readOnly.RawSize = $rawSize
+    $saved
+}
+
 $temporary = "$destination.$([Guid]::NewGuid().ToString('N')).tmp"
 try {
     [IO.File]::Copy($source, $temporary)
@@ -124,6 +266,10 @@ try {
             $initialized -= $readOnly.RawSize - $readOnlyRawSize
             $readOnly.RawSize = $readOnlyRawSize
         }
+    }
+
+    if ($readOnly.Name -ceq '.rdata') {
+        $initialized -= Move-ImportNameTail $image $optional $directories $headers $sections $readOnly
     }
 
     # Keep the RVAs and permissions. Put the section with more padding last so only

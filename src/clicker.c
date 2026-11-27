@@ -14,12 +14,8 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 };
 #endif
 
-#if defined(PICOCLICKER_ASM_RUN) && defined(_M_IX86)
-#define PICOCLICKER_ASM_DIALOG
-#endif
-
-#ifdef PICOCLICKER_ASM_DIALOG
-// The x86 dialog keeps one base for the writable state and one for the IAT.
+#ifdef PICOCLICKER_ASM_RUN
+// The assembly keeps one base for the writable state and one for the IAT.
 struct PicoRunData
 {
     UINT generation;
@@ -27,25 +23,24 @@ struct PicoRunData
     LPCSTR idleStatus;
     INPUT clickPair[2];
 } picoRunData;
+#ifdef _M_IX86
 _Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
     offsetof(struct PicoRunData, idleStatus) == 8 &&
     offsetof(struct PicoRunData, clickPair) == 12 &&
     offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
 #else
-#ifdef PICOCLICKER_ASM_RUN
-#define ASM_SHARED
-#define ASM_FASTCALL __fastcall
-const char PicoTimerError[] = "Timer Err";
-#else
-#define ASM_SHARED static
-#define ASM_FASTCALL static
-#define PicoTimerError PICO_TEXT("计时器启动失败", "Timer Err")
+_Static_assert(offsetof(struct PicoRunData, timer) == 8 &&
+    offsetof(struct PicoRunData, idleStatus) == 16 &&
+    offsetof(struct PicoRunData, clickPair) == 24 &&
+    offsetof(INPUT, mi.dwFlags) == 20 && INPUT_MOUSE == 0, "x64 dialog state layout");
 #endif
+#else
+#define PicoTimerError PICO_TEXT("计时器启动失败", "Timer Err")
 
-ASM_SHARED HANDLE timer;
-ASM_SHARED INPUT clickPair[2];
+static HANDLE timer;
+static INPUT clickPair[2];
 // Each transition advances the generation. Odd generations are active.
-ASM_SHARED UINT runState;
+static UINT runState;
 
 #ifdef PICOCLICKER_LITE
 static LPCTSTR idleStatus;
@@ -468,8 +463,8 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 }
 #endif
 
-#ifndef PICOCLICKER_ASM_DIALOG
-ASM_FASTCALL void Stop(HWND dialog, LPCTSTR status)
+#ifndef PICOCLICKER_ASM_RUN
+static void Stop(HWND dialog, LPCTSTR status)
 {
     if (runState & 1)
     {
@@ -572,7 +567,6 @@ static void Toggle(HWND dialog)
     ShowRunState(dialog, PICO_TEXT("连点中", "On"));
 }
 
-#ifndef PICOCLICKER_ASM_RUN
 static void Click(HWND dialog)
 {
     // A click started with the mouse must not immediately click the app's own button.
@@ -593,9 +587,8 @@ static void Click(HWND dialog)
         Stop(dialog, PICO_TEXT("点击失败", "Click Err"));
     }
 }
-#endif
 
-ASM_SHARED INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
+static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
@@ -698,15 +691,7 @@ ASM_SHARED INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam,
     return FALSE;
 }
 
-#ifdef PICOCLICKER_ASCII
-// Share both calls' caption and flags in the experimental machine code.
-ASM_FASTCALL __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
-{
-    MessageBox(dialog, text, "PicoClicker", MB_ICONERROR);
-}
-#else
 #define ShowRunError(dialog, text) MessageBox((dialog), (text), L"PicoClicker", MB_ICONERROR)
-#endif
 #endif
 
 #if defined(PICOCLICKER_ASM_RUN) && defined(_M_IX86)
@@ -792,7 +777,7 @@ __declspec(align(64)) UINT_PTR __security_cookie;
 UINT_PTR __security_cookie_complement;
 #endif
 
-#ifndef PICOCLICKER_ASM_DIALOG
+#if !defined(PICOCLICKER_ASM_RUN) || !defined(_M_IX86)
 void __cdecl __security_init_cookie(void);
 
 // The linker already supplies the module base needed to load the dialog resource.

@@ -10,12 +10,6 @@
 .set .Lmouse_flags, 16
 .set .Linput_size, 28
 
-.section .rdata,"dr"
-.Lui_error:
-    .asciz "UI Err"
-.Lclick_error:
-    .asciz "Click Err"
-
 // The dialog manager calls this address, which the assembly builds from its RVA.
 .section .gfids$y,"dr"
 .symidx "_DialogProc@16"

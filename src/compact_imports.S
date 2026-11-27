@@ -100,7 +100,7 @@ __imp_\name:
 
 // LLVM otherwise reserves a four-byte displacement for these section-relative constants.
 // The same FF /2 encoding calls through EBX in PE32 and RBX in PE32+.
-.macro call_import name
+.macro call_import name, modrm=0x53
 #ifdef __i386__
     .set .Ldisp\@, .Liat_\name
 #else
@@ -109,14 +109,35 @@ __imp_\name:
     .if .Ldisp\@ < -128 || .Ldisp\@ > 127
         .error "Compact IAT displacement does not fit in one byte"
     .endif
-    .byte 0xff, 0x53, .Ldisp\@
+    .byte 0xff, \modrm, .Ldisp\@
 .endm
 
-#ifdef __i386__
+.macro tail_import name
+    call_import \name, 0x63
+.endm
+
 .section .rdata,"dr"
+#ifdef __i386__
 .Ldialog_encoding:
     .include PICO_DIALOG_TEMPLATE
+#else
+.p2align 2
+.Ldialog_template:
+    .incbin PICO_DIALOG_TEMPLATE
+#endif
 
+.Lui_error:    .asciz "UI Err"
+.Lclick_error: .asciz "Click Err"
+.Ltitle:       .asciz "PicoClicker"
+.Ltimer_error: .asciz "Timer Err"
+.Linterval:    .asciz "1-60000ms"
+.Lbusy:        .asciz "F1 Busy"
+.Lf1:          .asciz "F1"
+.Lon:          .asciz "On"
+.Lstart:       .asciz "Start"
+.Lstop_label:  .asciz "Stop"
+
+#ifdef __i386__
 .bss
 .p2align 2
 .Ldialog_template:
@@ -125,9 +146,6 @@ __imp_\name:
 #include "compact_run_x86.inc"
 #include "compact_dialog_x86.inc"
 #else
-.section .rdata,"dr"
-.p2align 2
-.Ldialog_template:
-    .incbin PICO_DIALOG_TEMPLATE
 #include "compact_run_x64.inc"
+#include "compact_dialog_x64.inc"
 #endif

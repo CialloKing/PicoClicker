@@ -92,26 +92,26 @@
     push 1
     pop eax
     ret 16
-// Both Run and the dialog call these helpers with ESI as HWND, EBX as IAT and EBP as image base.
+// The helpers share ESI (HWND), EDI (state), EBX (IAT) and EBP (module).
 .Lstop:
-    lea eax, [ebp + _picoRunData@IMGREL]
-    test byte ptr [eax + .Lgeneration], 1
+    test byte ptr [edi + .Lgeneration], 1
     jz .Lafter_cancel
-    inc dword ptr [eax + .Lgeneration]
+    inc dword ptr [edi + .Lgeneration]
     push edx
-    push dword ptr [eax + .Ltimer]
+    push dword ptr [edi + .Ltimer]
     call_import CancelWaitableTimer
     pop edx
 .Lafter_cancel:
     test edx, edx
-    jne .Lshow_state
+    jne .Lshow_start
     ret
 
-.Lshow_state:
+.Lshow_start:
     push edx
     lea edx, [ebp + .Lstart@IMGREL]
-    test byte ptr [ebp + _picoRunData@IMGREL + .Lgeneration], 1
-    jz .Ltoggle_label
+    jmp .Ltoggle_label
+.Lshow_stop:
+    push edx
     lea edx, [ebp + .Lstop_label@IMGREL]
 .Ltoggle_label:
     push IDC_TOGGLE
@@ -243,7 +243,7 @@
     mov dword ptr [edi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [edi + .Lgeneration]
     lea edx, [ebp + .Lon@IMGREL]
-    call .Lshow_state
+    call .Lshow_stop
     jmp .Ltoggle_return
 .Ltimer_failed:
     lea edx, [ebp + .Ltimer_error@IMGREL]

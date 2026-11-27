@@ -36,8 +36,8 @@
 .Linitialize:
     push -4                        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
     call_import SetProcessDpiAwarenessContext
-    sub esp, 40
-    // Timer generation and drain counter, then MSG and the /GS cookie.
+    sub esp, 44
+    // Timer generation and drain counter, then MSG, the /GS cookie and HWND.
     xor esi, esp
     mov dword ptr [esp + 36], esi
     lea edx, [ebp + .Ldialog_template@IMGREL]
@@ -54,16 +54,18 @@
     mov esi, eax
     test eax, eax
     jz .Lui_failed
-    lea edi, [esp + 8]
+    mov dword ptr [esp + 40], esi
+    lea esi, [esp + 8]
+    lea edi, [ebp + _picoRunData@IMGREL]
 
 .Lwait:
-    mov eax, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
+    mov eax, dword ptr [edi + .Lgeneration]
     mov dword ptr [esp], eax
     and eax, 1
     push 4                         // MWMO_INPUTAVAILABLE
     push 0x1cff                    // QS_ALLINPUT
     push -1                        // INFINITE
-    lea edx, [ebp + _picoRunData@IMGREL + .Ltimer]
+    lea edx, [edi + .Ltimer]
     push edx
     push eax
     call_import MsgWaitForMultipleObjectsEx
@@ -81,16 +83,16 @@
     push eax
     push eax
     push eax
-    push edi
+    push esi
     call_import PeekMessageA
     test eax, eax
     jz .Lcheck_tick
-    cmp dword ptr [edi + 4], 0x12  // WM_QUIT
+    cmp dword ptr [esi + 4], 0x12  // WM_QUIT
     je .Lquit
     // Translate printable keys for the edit control without dialog navigation.
-    push edi
+    push esi
     call_import TranslateMessage
-    push edi
+    push esi
     call_import DispatchMessageA
     dec byte ptr [esp + 4]
     jnz .Lpeek
@@ -100,27 +102,27 @@
     mov eax, dword ptr [esp]
     test al, 1
     jz .Lagain
-    cmp eax, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
+    cmp eax, dword ptr [edi + .Lgeneration]
     je .Lclick
 .Lagain:
     jmp .Lwait
 
 .Lclick:
     // The message queue is drained. Reuse its buffer for the POINT passed to Win32.
-    push edi
+    push esi
     call_import GetCursorPos
     test eax, eax
     jz .Lagain
-    push dword ptr [edi + 4]
-    push dword ptr [edi]
+    push dword ptr [esi + 4]
+    push dword ptr [esi]
     call_import WindowFromPoint
     push 2                         // GA_ROOT
     push eax
     call_import GetAncestor
     // A press over the clicker's own window must not toggle its controls.
-    cmp eax, esi
+    cmp eax, dword ptr [esp + 40]
     je .Lagain
-    lea eax, [ebp + _picoRunData@IMGREL + .Lclick_pair]
+    lea eax, [edi + .Lclick_pair]
     push .Linput_size
     push eax
     push 2
@@ -130,17 +132,21 @@
     jnz .Lagain
     jnc .Lclick_failed
     // Release the button if SendInput accepted only the press.
-    lea eax, [ebp + _picoRunData@IMGREL + .Lclick_pair + .Linput_size]
+    lea eax, [edi + .Lclick_pair + .Linput_size]
     push .Linput_size
     push eax
     push 1
     call_import SendInput
 .Lclick_failed:
+    push esi
+    mov esi, dword ptr [esp + 44]  // The dialog helpers expect HWND in ESI.
     lea edx, [ebp + .Lclick_error@IMGREL]
     call .Lstop
-    jmp .Lwait
+    pop esi
+    jmp .Lagain
 
 .Lwait_failed:
+    mov esi, dword ptr [esp + 40]
     xor edx, edx
     call .Lstop
     lea edx, [ebp + .Ltimer_error@IMGREL]
@@ -159,7 +165,7 @@
     pop esi
     jmp .Lreturn
 .Lquit:
-    mov esi, dword ptr [edi + 8]
+    mov esi, dword ptr [esi + 8]
 .Lreturn:
     mov ecx, dword ptr [esp + 36]
     xor ecx, esp

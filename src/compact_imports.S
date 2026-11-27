@@ -1,4 +1,14 @@
 #include "compact_cookie.h"
+#include "resource.h"
+
+.if IDC_MIDDLE != IDC_LEFT + 1 || IDC_RIGHT != IDC_LEFT + 2
+    .error "Mouse button flags must match the radio control IDs"
+.endif
+
+.macro button_flags
+.Lbutton_flags:
+    .byte 2, 32, 8                 // MOUSEEVENTF_*DOWN in control ID order.
+.endm
 
 // The experimental image resolves its unbound imports through FirstThunk.
 // Use the explicit .gfids list for CFG. The other calls are direct or use fixed IAT slots.
@@ -152,6 +162,7 @@ __imp_\name:
 
 #ifdef __i386__
 .Ltimer_error: .asciz "Timer Err"
+    button_flags
 .set .Liat_text_size, (. - .Liat_text_begin + 3) & -4
 .p2align 2
 .globl ___security_cookie
@@ -159,6 +170,10 @@ ___security_cookie:
     .long INITIAL_COOKIE
 .Liat_prefix_end:
 .set .Lcookie_disp, -4
+.set .Lbutton_disp, .Lbutton_flags - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
+.if .Lbutton_disp < -128
+    .error "Mouse button flags must be within 128 bytes before the IAT"
+.endif
 .if ___security_cookie - .Liat_prefix_end != .Lcookie_disp
     .error "The PE32 stack cookie must occupy the DWORD before the IAT"
 .endif
@@ -215,7 +230,7 @@ ___security_cookie:
 // The entry ends at ExitProcess. Use the padding before the CFG-aligned callback.
 .Lstop_label:  .asciz "Stop"
 #ifdef __x86_64__
-.Lbutton_flags: .byte 2, 32, 8   // MOUSEEVENTF_*DOWN in control ID order.
+    button_flags
 .Ltimer_error: .asciz "Timer Err"
 #endif
 

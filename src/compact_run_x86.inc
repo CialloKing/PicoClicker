@@ -9,6 +9,7 @@
 .set .Lclick_pair, 12
 .set .Lmouse_flags, 16
 .set .Linput_size, 28
+.set .Lselected_button, 68
 
 // The dialog manager calls this address, which the assembly builds from its RVA.
 .section .gfids$y,"dr"

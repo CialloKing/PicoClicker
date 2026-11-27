@@ -23,9 +23,17 @@
     xor eax, eax
     ret 16
 .Lcommand:
-    cmp dword ptr [esp + 12], IDC_TOGGLE  // BN_CLICKED is zero.
-    jne .Lignored
-    jmp .Ltoggle_message
+    mov eax, dword ptr [esp + 12]
+    cmp eax, IDC_TOGGLE             // BN_CLICKED is zero.
+    je .Ltoggle_message
+    sub eax, IDC_LEFT
+    cmp eax, IDC_RIGHT - IDC_LEFT
+    ja .Lignored
+    // The active click pair continues to use the selection captured at start.
+    mov byte ptr [_picoRunData + .Lselected_button], al
+    push 1
+    pop eax
+    ret 16
 .Lclose_message:
     xor eax, eax
     jmp .Ldialog_enter
@@ -212,32 +220,9 @@
     test eax, eax
     jz .Ltimer_failed
 
-    push IDC_MIDDLE
-    pop ecx
-.Lradio:
-    push ecx
-    push 0
-    push 0
-    push 0xf0                      // BM_GETCHECK
-    push ecx
-    push esi
-    call_import SendDlgItemMessageA
-    pop ecx
-    dec eax
-    jz .Lchecked_radio
-    inc ecx
-    cmp ecx, IDC_RIGHT + 1
-    jne .Lradio
-    push 2                         // MOUSEEVENTF_LEFTDOWN
-    pop eax
-    jmp .Lready
-.Lchecked_radio:
-    push 8                         // MOUSEEVENTF_RIGHTDOWN
-    pop eax
-    cmp ecx, IDC_MIDDLE
-    jne .Lready
-    shl eax, 2                     // MOUSEEVENTF_MIDDLEDOWN
-.Lready:
+    movzx eax, byte ptr [edi + .Lselected_button]
+    // MOVZX EAX,[EBX+EAX+disp8], with the read-only flags next to the IAT.
+    .byte 0x0f, 0xb6, 0x44, 0x03, .Lbutton_disp
     mov dword ptr [edi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // The release flag follows its press flag.
     mov dword ptr [edi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax

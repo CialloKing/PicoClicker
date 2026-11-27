@@ -25,11 +25,15 @@ struct PicoRunData
     HANDLE timer;
     LPCSTR idleStatus;
     INPUT clickPair[2];
+#ifdef _M_IX86
+    BYTE selectedButton;
+#endif
 } picoRunData;
 #ifdef _M_IX86
 _Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
     offsetof(struct PicoRunData, idleStatus) == 8 &&
     offsetof(struct PicoRunData, clickPair) == 12 &&
+    offsetof(struct PicoRunData, selectedButton) == 68 &&
     offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
 #else
 _Static_assert(offsetof(struct PicoRunData, selectedButton) == 4 &&
@@ -771,8 +775,8 @@ done:
 #ifdef PICOCLICKER_LOADER_COOKIE
 // The loader replaces the on-disk sentinel. Keeping it with the read-only data
 // lets the entire writable section remain zero-initialized on disk.
-#if !defined(PICOCLICKER_ASM_RUN) || !defined(_M_IX86)
 // Experimental x86 places this symbol in its own IAT-adjacent assembly section.
+#if !defined(PICOCLICKER_ASM_RUN) || !defined(_M_IX86)
 #pragma section(".rdata$pcookie", read)
 __declspec(allocate(".rdata$pcookie")) UINT_PTR __security_cookie = INITIAL_COOKIE;
 #endif

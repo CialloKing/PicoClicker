@@ -24,9 +24,6 @@ DialogProc:
 .Lcommand:
     cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
     je .Ltoggle_message
-    .if IDC_MIDDLE != IDC_LEFT + 1 || IDC_RIGHT != IDC_LEFT + 2
-        .error "Mouse button flags must match the radio control IDs"
-    .endif
     lea eax, [r8 - IDC_LEFT]
     cmp eax, IDC_RIGHT - IDC_LEFT
     ja .Lignored_message

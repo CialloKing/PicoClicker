@@ -111,24 +111,6 @@
 
 .Lshow_state:
     push edx
-    push edi
-    push IDC_INTERVAL
-    pop edi
-.Lenable:
-    push edi
-    push esi
-    call_import GetDlgItem
-    mov edx, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
-    not edx
-    and edx, 1
-    push edx
-    push eax
-    call_import EnableWindow
-    inc edi
-    cmp edi, IDC_RIGHT + 1
-    jne .Lenable
-    pop edi
-
     lea edx, [ebp + .Lstart@IMGREL]
     test byte ptr [ebp + _picoRunData@IMGREL + .Lgeneration], 1
     jz .Ltoggle_label
@@ -170,6 +152,7 @@
     lea edx, [ebp + .Linterval@IMGREL]
     jmp .Ltoggle_status
 .Lread_interval:
+    // Each start captures the interval and button; edits only affect the next start.
     sub esp, 12
     // The first eight bytes hold the interval text, then the timer's LARGE_INTEGER.
     mov eax, dword ptr [ebp + ___security_cookie@IMGREL]

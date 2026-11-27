@@ -106,6 +106,7 @@ DialogProc:
     lea rdx, [rip + .Linterval]
     jmp .Ltoggle_status
 .Lread_interval:
+    // Each start captures the interval and button; edits only affect the next start.
     lea r9, [rsp + 48]
     mov qword ptr [rsp + 32], r9
     mov rcx, rsi
@@ -199,14 +200,12 @@ DialogProc:
 // cancellation; RDX is the status to display, or null for cancellation alone.
 .seh_proc .Lupdate_state
 .Lupdate_state:
-    push rbp
-    .seh_pushreg rbp
-    sub rsp, 48
-    .seh_stackalloc 48
+    sub rsp, 56
+    .seh_stackalloc 56
     .seh_endprologue
     mov qword ptr [rsp + 40], rdx
     test al, al
-    jz .Lupdate_controls
+    jz .Lupdate_labels
     test byte ptr [rdi + .Lgeneration], 1
     jz .Lafter_cancel
     inc dword ptr [rdi + .Lgeneration]
@@ -215,20 +214,7 @@ DialogProc:
 .Lafter_cancel:
     cmp qword ptr [rsp + 40], 0
     je .Lstate_return
-.Lupdate_controls:
-    mov ebp, IDC_INTERVAL
-.Lenable:
-    mov rcx, rsi
-    mov edx, ebp
-    call_import GetDlgItem
-    mov rcx, rax
-    mov edx, dword ptr [rdi + .Lgeneration]
-    not edx
-    and edx, 1
-    call_import EnableWindow
-    inc ebp
-    cmp ebp, IDC_RIGHT + 1
-    jne .Lenable
+.Lupdate_labels:
     lea rdx, [rip + .Lstart]
     test byte ptr [rdi + .Lgeneration], 1
     jz .Ltoggle_label
@@ -239,8 +225,7 @@ DialogProc:
     mov rdx, qword ptr [rsp + 40]
     call .Lstatus
 .Lstate_return:
-    add rsp, 48
-    pop rbp
+    add rsp, 56
     ret
 .seh_endproc
 

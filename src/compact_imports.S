@@ -84,13 +84,11 @@ __imp_\name:
     import MsgWaitForMultipleObjectsEx, 20
     import PeekMessageA, 20
     import PostQuitMessage, 4
-    import GetDlgItem, 8
     import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     // PE32 can spread this tail across its .text padding and PE header.
     import RegisterHotKey, 16
-    import EnableWindow, 8
     import TranslateMessage, 4
     // Together with the DLL names, these trailing names fill the PE header space.
     import CreateDialogIndirectParamA, 20

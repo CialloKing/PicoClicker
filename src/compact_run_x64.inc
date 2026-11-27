@@ -54,7 +54,7 @@ PicoClickerEntry:
     // After the shadow space: fifth argument, wait result, MSG, then the /GS cookie.
     xor rsi, rsp
     mov qword ptr [rsp + 96], rsi
-    mov ecx, -4                    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    mov rcx, -4                    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is pointer-sized.
     call_import SetProcessDpiAwarenessContext
     lea rdx, [rip + .Ldialog_template]
     lea rsi, [rip + .Ldialog_encoding]

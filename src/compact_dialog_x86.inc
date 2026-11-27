@@ -28,9 +28,6 @@
     mov byte ptr [_picoRunData + .Lclosing], 1
     jmp .Lhandled
 .Lcommand:
-    .if IDC_TOGGLE != IDC_RIGHT + 1
-        .error "The toggle ID must follow the mouse button IDs"
-    .endif
     mov eax, dword ptr [esp + 12]
     sub eax, IDC_LEFT
     cmp eax, IDC_TOGGLE - IDC_LEFT  // BN_CLICKED is zero.

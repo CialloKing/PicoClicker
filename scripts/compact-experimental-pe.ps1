@@ -238,18 +238,26 @@ try {
         $readOnly.Offset + $readOnly.RawSize -ne $image.Length) {
         throw 'Unexpected on-disk layout in the compact experimental PE.'
     }
-    if ([BitConverter]::ToUInt16($image, $optional) -eq 0x10b) {
-        # PE32 addresses the cookie and preceding text relative to FirstThunk.
-        $config = [BitConverter]::ToUInt32($image, $directories + 80)
-        $iat = [BitConverter]::ToUInt32($image, $directories + 96)
-        if ($config -lt $readOnly.Rva -or $config + 64 -gt $readOnly.Rva + $readOnly.Size -or $iat -le $readOnly.Rva) {
-            throw 'Missing the PE32 load config or IAT.'
-        }
-        $cookie = [BitConverter]::ToUInt32($image, $readOnly.Offset + $config - $readOnly.Rva + 60)
+    # Both assemblies address the cookie and preceding text relative to FirstThunk.
+    $isPE32 = [BitConverter]::ToUInt16($image, $optional) -eq 0x10b
+    $config = [BitConverter]::ToUInt32($image, $directories + 80)
+    $iat = [BitConverter]::ToUInt32($image, $directories + 96)
+    $cookieField = if ($isPE32) { 60 } else { 88 }
+    $pointerSize = if ($isPE32) { 4 } else { 8 }
+    if ($config -lt $readOnly.Rva -or $config + $cookieField + $pointerSize -gt $readOnly.Rva + $readOnly.Size -or
+        $iat - $pointerSize -lt $readOnly.Rva -or $iat -ge $readOnly.Rva + $readOnly.Size) {
+        throw 'Missing the experimental load config or IAT.'
+    }
+    $cookieOffset = $readOnly.Offset + $config - $readOnly.Rva + $cookieField
+    if ($isPE32) {
+        $cookie = [BitConverter]::ToUInt32($image, $cookieOffset)
         $imageBase = [BitConverter]::ToUInt32($image, $optional + 28)
-        if ($cookie -ne $imageBase + $iat - 4) {
-            throw 'Expected the PE32 stack cookie immediately before the IAT.'
-        }
+    } else {
+        $cookie = [BitConverter]::ToUInt64($image, $cookieOffset)
+        $imageBase = [BitConverter]::ToUInt64($image, $optional + 24)
+    }
+    if ($cookie -ne $imageBase + $iat - $pointerSize) {
+        throw 'Expected the experimental stack cookie immediately before the IAT.'
     }
 
     # Moving the relocations can free space for import names even when it saves

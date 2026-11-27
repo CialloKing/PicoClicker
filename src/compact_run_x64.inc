@@ -40,7 +40,7 @@ PicoClickerEntry:
 
     // Center the IAT base so every call can use a signed-byte displacement.
     lea rbx, [rip + __imp_GetAncestor]
-    mov rsi, qword ptr [rip + __security_cookie]
+    access_iat_cookie 0x8b, 0x73   // MOV RSI, [RBX+disp8]
     test rsi, rsi
     jz .Lbad_cookie
     movabs rax, INITIAL_COOKIE
@@ -62,7 +62,7 @@ PicoClickerEntry:
     decode_dialog
     lea rdi, [rip + picoRunData]
     lea rbp, [rsp + 48]
-    xor ecx, ecx                   // Use the current executable as the template module.
+    // The decoder leaves RCX zero, selecting the current module for this dialog.
     xor r8d, r8d
     lea r9, [rip + DialogProc]
     mov qword ptr [rsp + 32], r8
@@ -149,16 +149,16 @@ PicoClickerEntry:
 .Lclick_failed:
     call .Lcancel_timer
     call .Lshow_start
-    lea rdx, [rip + .Lclick_error]
+    load_iat_text .Lclick_error
     call .Lstatus
     jmp .Lagain
 
 .Lwait_failed:
     call .Lcancel_timer
-    lea rdx, [rip + .Ltimer_error]
+    load_iat_text .Ltimer_error
     jmp .Lshow_error
 .Lui_failed:
-    lea rdx, [rip + .Lui_error]
+    load_iat_text .Lui_error
 .Lshow_error:
     mov rcx, rsi
     call .Lrun_error

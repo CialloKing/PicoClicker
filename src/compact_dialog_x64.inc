@@ -26,10 +26,9 @@ DialogProc:
     mov byte ptr [rip + picoRunData + .Lclosing], 1
     jmp .Lhandled_leaf
 .Lcommand:
-    cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
-    je .Ltoggle_message
     lea eax, [r8 - IDC_LEFT]
-    cmp eax, IDC_RIGHT - IDC_LEFT
+    cmp eax, IDC_TOGGLE - IDC_LEFT // BN_CLICKED is zero.
+    je .Ltoggle_message
     ja .Lignored_message
     // Record the selection separately so an active click pair remains stable.
     mov byte ptr [rip + picoRunData + .Lselected_button], al
@@ -59,11 +58,11 @@ DialogProc:
     .seh_endprologue
 
     // The outgoing argument area ends at 48; the edit buffer and cookie follow it.
-    mov rax, qword ptr [rip + __security_cookie]
+    lea rbx, [rip + __imp_GetAncestor]
+    access_iat_cookie 0x8b, 0x43   // MOV RAX, [RBX+disp8]
     xor rax, rsp
     mov qword ptr [rsp + 56], rax
     mov rsi, rcx
-    lea rbx, [rip + __imp_GetAncestor]
     lea rdi, [rip + picoRunData]
 
     cmp dl, 1
@@ -76,14 +75,15 @@ DialogProc:
     lea r9d, [rax + 1]             // BST_CHECKED
     call_import SendDlgItemMessageA
     mov rcx, rsi
-    mov edx, ID_HOTKEY
+    xor edx, edx
+    mov dl, ID_HOTKEY
     mov r8d, 0x4000                // MOD_NOREPEAT
-    mov r9d, 0x70                  // VK_F1
+    lea r9d, [rdx + 0x70 - ID_HOTKEY] // VK_F1
     call_import RegisterHotKey
-    lea rdx, [rip + .Lbusy]
+    load_iat_text .Lbusy
     test eax, eax
     jz .Lsave_idle
-    lea rdx, [rip + .Lf1]
+    load_iat_text .Lf1
 .Lsave_idle:
     mov qword ptr [rdi + .Lidle_status], rdx
     jmp .Ltoggle_status
@@ -107,7 +107,7 @@ DialogProc:
     pop rbx
     ret
 .Lbad_interval:
-    lea rdx, [rip + .Linterval]
+    load_iat_text .Linterval
     jmp .Ltoggle_status
 .Lread_interval:
     // Each start captures the interval and button; edits only affect the next start.
@@ -170,10 +170,11 @@ DialogProc:
     mov dword ptr [rdi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [rdi + .Lgeneration]
     call .Lshow_stop
-    lea rdx, [rip + .Lon]
-    jmp .Ltoggle_status
+    load_iat_text .Lon
+    jmp .Lreport_start
 .Ltimer_failed:
-    lea rdx, [rip + .Ltimer_error]
+    load_iat_text .Ltimer_error
+.Lreport_start:
     jmp .Ltoggle_status
 .seh_endproc
 

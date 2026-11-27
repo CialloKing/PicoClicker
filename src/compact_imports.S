@@ -4,6 +4,9 @@
 .if IDC_MIDDLE != IDC_LEFT + 1 || IDC_RIGHT != IDC_LEFT + 2
     .error "Mouse button flags must match the radio control IDs"
 .endif
+.if IDC_TOGGLE != IDC_RIGHT + 1
+    .error "The toggle ID must follow the mouse button IDs"
+.endif
 
 .macro button_flags
 .Lbutton_flags:
@@ -142,47 +145,69 @@ __imp_\name:
 .Ldialog_encoding:
     .include PICO_DIALOG_TEMPLATE
 
-#ifdef __i386__
 // FirstThunk uses .idata$5. The unused lookup-table contribution can hold
 // read-only data immediately before it. The packer verifies the cookie offset.
 .section .idata$4,"dr"
+#ifdef __i386__
+.set .Lcookie_width, 4
+.set .Liat_base_offset, 0
 .p2align 2
-.Liat_text_begin:
 #else
-.section .rdata,"dr"
+.set .Lcookie_width, 8
+.set .Liat_base_offset, .Liat_GetAncestor
+.p2align 3
 #endif
+.Liat_text_begin:
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
 .Linterval:    .asciz "1-60000ms"
 .Lbusy:        .asciz "F1 Busy"
 .Lf1:          .asciz "F1"
 .Lon:          .asciz "On"
+.Ltimer_error: .asciz "Timer Err"
 
 #ifdef __i386__
-.Ltimer_error: .asciz "Timer Err"
     button_flags
-.set .Liat_text_size, (. - .Liat_text_begin + 3) & -4
+#endif
+.set .Liat_text_size, (. - .Liat_text_begin + .Lcookie_width - 1) & -.Lcookie_width
+#ifdef __i386__
 .p2align 2
 .globl ___security_cookie
 ___security_cookie:
     .long INITIAL_COOKIE
-.Liat_prefix_end:
-.set .Lcookie_disp, -4
+#else
+.p2align 3
+.globl __security_cookie
+__security_cookie:
+    .quad INITIAL_COOKIE
+#endif
+.set .Lcookie_disp, -.Lcookie_width - .Liat_base_offset
+.if .Lcookie_disp < -128
+    .error "The stack cookie must be within 128 bytes before the IAT base"
+.endif
+#ifdef __i386__
 .set .Lbutton_disp, .Lbutton_flags - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
 .if .Lbutton_disp < -128
     .error "Mouse button flags must be within 128 bytes before the IAT"
 .endif
-.if ___security_cookie - .Liat_prefix_end != .Lcookie_disp
-    .error "The PE32 stack cookie must occupy the DWORD before the IAT"
-.endif
+#endif
 
 .macro load_iat_text name
     .set .Ltext_disp\@, \name - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
     .if .Ltext_disp\@ < -128 || .Ltext_disp\@ >= 0
-        .error "Read-only text must be within 128 bytes before the IAT"
+        .error "Read-only text must be within 128 bytes before the IAT base"
     .endif
-    // LLVM reserves disp32 for label differences. Emit LEA EDX,[EBX+disp8].
+    // LLVM reserves disp32 for label differences. Emit LEA with disp8.
+#ifdef __x86_64__
+    .byte 0x48
+#endif
     .byte 0x8d, 0x53, .Ltext_disp\@
+.endm
+
+#ifdef __x86_64__
+.macro access_iat_cookie opcode, modrm
+    // The x64 IAT base comes from a label difference, so force the checked disp8.
+    .byte 0x48, \opcode, \modrm, .Lcookie_disp
 .endm
 #endif
 
@@ -229,7 +254,6 @@ ___security_cookie:
 .Lstop_label:  .asciz "Stop"
 #ifdef __x86_64__
     button_flags
-.Ltimer_error: .asciz "Timer Err"
 #endif
 
 #ifdef __i386__
@@ -246,7 +270,7 @@ ___security_cookie:
 #ifdef __i386__
     cmp ecx, dword ptr [ebx + .Lcookie_disp]
 #else
-    cmp rcx, qword ptr [rip + __security_cookie]
+    access_iat_cookie 0x3b, 0x4b   // CMP RCX, [RBX+disp8]
     jne .Lcookie_failed
     shr rcx, 48                    // Return with RCX zero for a valid Win64 cookie.
 #endif

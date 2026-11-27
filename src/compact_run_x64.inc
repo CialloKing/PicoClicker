@@ -48,7 +48,7 @@ PicoClickerEntry:
     mov ecx, 6                     // FAST_FAIL_GS_COOKIE_INIT
     int 0x29
 .Linitialize:
-    // After the shadow space: fifth argument, wait result, MSG, then the /GS cookie.
+    // After the shadow space: fifth argument, drain counter, MSG, then the /GS cookie.
     xor rsi, rsp
     mov qword ptr [rsp + 96], rsi
     mov rcx, -4                    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is pointer-sized.
@@ -79,8 +79,11 @@ PicoClickerEntry:
     call_import MsgWaitForMultipleObjectsEx
     inc eax
     jz .Lwait_failed               // WAIT_FAILED was -1
-    mov dword ptr [rsp + 40], eax
-    mov byte ptr [rsp + 44], 32
+    dec eax
+    jz .Lstart_drain               // WAIT_OBJECT_0
+    and r12b, -2                   // This wakeup did not signal the timer.
+.Lstart_drain:
+    mov byte ptr [rsp + 40], 32
 .Lpeek:
     mov rcx, rbp
     xor edx, edx
@@ -102,13 +105,11 @@ PicoClickerEntry:
     mov rcx, rbp
     call_import DispatchMessageA
 .Ldrain:
-    dec byte ptr [rsp + 44]
+    dec byte ptr [rsp + 40]
     jnz .Lpeek
 
 .Lcheck_tick:
     // Queued stops and restarts invalidate the signal from the earlier timer generation.
-    cmp dword ptr [rsp + 40], 1    // WAIT_OBJECT_0 before the increment
-    jne .Lagain
     test r12b, 1
     jz .Lagain
     cmp r12d, dword ptr [rdi + .Lgeneration]

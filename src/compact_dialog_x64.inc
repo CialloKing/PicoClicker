@@ -252,14 +252,14 @@ DialogProc:
     movzx edx, al
     mov r8d, 0x0c                  // WM_SETTEXT
     xor r9d, r9d
+.Lsend_control:
     mov rcx, rsi
     tail_import SendDlgItemMessageA
 .Lget_check:
     xor r9d, r9d
     mov qword ptr [rsp + 40], r9
     mov r8d, 0xf0                  // BM_GETCHECK
-    mov rcx, rsi
-    tail_import SendDlgItemMessageA
+    jmp .Lsend_control
 .Lrun_error:
     lea r8, [rip + .Ltitle]
     mov r9d, 0x10                  // MB_ICONERROR

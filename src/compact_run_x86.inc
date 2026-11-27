@@ -130,10 +130,10 @@
     push eax
     push 2
     call_import SendInput
-    cmp eax, 2
-    je .Lagain
-    dec eax
-    jnz .Lclick_failed
+    // Two submitted events give a count of 0, 1 or 2. Only 1 sets CF here.
+    shr eax, 1
+    jnz .Lagain
+    jnc .Lclick_failed
     // Release the button if SendInput accepted only the press.
     lea eax, [ebp + _picoRunData@IMGREL + .Lclick_pair + .Linput_size]
     push .Linput_size

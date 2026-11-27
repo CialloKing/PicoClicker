@@ -127,12 +127,10 @@ __imp_\name:
 
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
-.Ltimer_error: .asciz "Timer Err"
 .Linterval:    .asciz "1-60000ms"
 .Lbusy:        .asciz "F1 Busy"
 .Lf1:          .asciz "F1"
 .Lon:          .asciz "On"
-.Lstop_label:  .asciz "Stop"
 
 .bss
 .p2align 2
@@ -164,9 +162,20 @@ __imp_\name:
 
 #ifdef __i386__
 #include "compact_run_x86.inc"
-#include "compact_dialog_x86.inc"
 #else
 #include "compact_run_x64.inc"
+#endif
+
+// The entry ends at ExitProcess. Use the padding before the CFG-aligned callback.
+.Lstop_label:  .asciz "Stop"
+#ifdef __i386__
+.section .rdata,"dr"              // PE32 has room for only the shorter string.
+#endif
+.Ltimer_error: .asciz "Timer Err"
+
+#ifdef __i386__
+#include "compact_dialog_x86.inc"
+#else
 #include "compact_dialog_x64.inc"
 #endif
 

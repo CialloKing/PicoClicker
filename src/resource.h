@@ -1,6 +1,15 @@
 #ifndef PICOCLICKER_RESOURCE_H
 #define PICOCLICKER_RESOURCE_H
 
+// Select the same labels in C and in the dialog resource. RC encodes its own strings.
+#if defined(PICOCLICKER_ASCII)
+#define PICO_TEXT(localized, english) english
+#elif defined(RC_INVOKED)
+#define PICO_TEXT(localized, english) localized
+#else
+#define PICO_TEXT(localized, english) TEXT(localized)
+#endif
+
 #define IDD_MAIN 101
 
 // Keep the interactive IDs contiguous and below 128 for short x86 immediates.

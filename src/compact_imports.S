@@ -62,26 +62,26 @@ __imp_\name:
 #endif
 .Lkernel_iat:
     import CancelWaitableTimer, 4
-    import CreateWaitableTimerExW, 16
+    import CreateWaitableTimerExA, 16
     import ExitProcess, 4
     import SetWaitableTimer, 24
     end_iat
 
 .Luser_iat:
-    import CreateDialogParamW, 20
+    import CreateDialogParamA, 20
     import DestroyWindow, 4
-    import DispatchMessageW, 4
+    import DispatchMessageA, 4
     import EnableWindow, 8
     import GetAncestor, 8
     import GetCursorPos, 4
     import GetDlgItem, 8
-    import IsDialogMessageW, 8
-    import MessageBoxW, 16
+    import IsDialogMessageA, 8
+    import MessageBoxA, 16
     import MsgWaitForMultipleObjectsEx, 20
-    import PeekMessageW, 20
+    import PeekMessageA, 20
     import PostQuitMessage, 4
     import RegisterHotKey, 16
-    import SendDlgItemMessageW, 20
+    import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     import TranslateMessage, 4

@@ -18,7 +18,7 @@ static INPUT clickPair[2];
 static UINT runState;
 
 #ifdef PICOCLICKER_LITE
-static PCWSTR idleStatus;
+static LPCTSTR idleStatus;
 #else
 typedef struct
 {
@@ -45,13 +45,13 @@ static struct
 } capture;
 #endif
 
-static void SetControlText(HWND dialog, int id, PCWSTR text)
+static void SetControlText(HWND dialog, int id, LPCTSTR text)
 {
     // The edit, radio buttons and text updates share one control-message import.
-    SendDlgItemMessageW(dialog, id, WM_SETTEXT, 0, (LPARAM)text);
+    SendDlgItemMessage(dialog, id, WM_SETTEXT, 0, (LPARAM)text);
 }
 
-static void ShowRunState(HWND dialog, PCWSTR status)
+static void ShowRunState(HWND dialog, LPCTSTR status)
 {
 #ifdef PICOCLICKER_LITE
     const int lastControl = IDC_RIGHT;
@@ -78,7 +78,7 @@ static void ShowRunState(HWND dialog, PCWSTR status)
 #endif
         EnableWindow(GetDlgItem(dialog, id), enabled);
     }
-    SetControlText(dialog, IDC_TOGGLE, (runState & 1) ? L"停止" : L"开始");
+    SetControlText(dialog, IDC_TOGGLE, (runState & 1) ? PICO_TEXT("停止", "Stop") : PICO_TEXT("开始", "Start"));
     SetControlText(dialog, IDC_STATUS, status);
 }
 
@@ -437,7 +437,7 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 }
 #endif
 
-static void Stop(HWND dialog, PCWSTR status)
+static void Stop(HWND dialog, LPCTSTR status)
 {
     if (runState & 1)
     {
@@ -452,8 +452,8 @@ static void Stop(HWND dialog, PCWSTR status)
 
 static UINT ReadInterval(HWND dialog)
 {
-    WCHAR text[7];
-    UINT length = (UINT)SendDlgItemMessageW(dialog, IDC_INTERVAL, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text);
+    TCHAR text[7];
+    UINT length = (UINT)SendDlgItemMessage(dialog, IDC_INTERVAL, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text);
     UINT interval = 0;
 
     // Read one extra character so overlong pasted input cannot be accepted after truncation.
@@ -463,7 +463,7 @@ static UINT ReadInterval(HWND dialog)
     }
     for (UINT index = 0; index < length; ++index)
     {
-        UINT digit = (UINT)text[index] - L'0';
+        UINT digit = (UINT)text[index] - '0';
         if (digit > 9)
         {
             return 0;
@@ -484,7 +484,7 @@ static void SelectClickPair(HWND dialog)
     DWORD down = MOUSEEVENTF_LEFTDOWN;
     for (int id = IDC_MIDDLE; id <= IDC_RIGHT; ++id)
     {
-        if (SendDlgItemMessageW(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED)
+        if (SendDlgItemMessage(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED)
         {
             down = id == IDC_MIDDLE ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_RIGHTDOWN;
             break;
@@ -516,13 +516,13 @@ static void Toggle(HWND dialog)
     UINT interval = ReadInterval(dialog);
     if (interval == 0 || interval > 60000)
     {
-        SetControlText(dialog, IDC_STATUS, L"间隔限1–60000ms");
+        SetControlText(dialog, IDC_STATUS, PICO_TEXT("间隔限1–60000ms", "1-60000ms"));
         return;
     }
 
     if (!timer)
     {
-        timer = CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+        timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
             TIMER_MODIFY_STATE | SYNCHRONIZE);
     }
 
@@ -531,13 +531,13 @@ static void Toggle(HWND dialog)
     due.QuadPart = -(LONG)(interval * 10000u);
     if (!timer || !SetWaitableTimer(timer, &due, (LONG)interval, NULL, NULL, FALSE))
     {
-        SetControlText(dialog, IDC_STATUS, L"计时器启动失败");
+        SetControlText(dialog, IDC_STATUS, PICO_TEXT("计时器启动失败", "Timer Err"));
         return;
     }
 
     SelectClickPair(dialog);
     ++runState;
-    ShowRunState(dialog, L"连点中");
+    ShowRunState(dialog, PICO_TEXT("连点中", "On"));
 }
 
 static void Click(HWND dialog)
@@ -557,7 +557,7 @@ static void Click(HWND dialog)
             // Try to release the button when only the down event made it into the stream.
             SendInput(1, &clickPair[1], sizeof(clickPair[1]));
         }
-        Stop(dialog, L"点击失败");
+        Stop(dialog, PICO_TEXT("点击失败", "Click Err"));
     }
 }
 
@@ -566,10 +566,11 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
     switch (message)
     {
         case WM_INITDIALOG:
-            SendDlgItemMessageW(dialog, IDC_LEFT, BM_SETCHECK, BST_CHECKED, 0);
+            SendDlgItemMessage(dialog, IDC_LEFT, BM_SETCHECK, BST_CHECKED, 0);
 #ifdef PICOCLICKER_LITE
             // Manual start and stop are still available when another app owns F1.
-            idleStatus = RegisterHotKey(dialog, ID_HOTKEY, MOD_NOREPEAT, VK_F1) ? L"F1 启停" : L"F1 不可用";
+            idleStatus = RegisterHotKey(dialog, ID_HOTKEY, MOD_NOREPEAT, VK_F1)
+                ? PICO_TEXT("F1 启停", "F1") : PICO_TEXT("F1 不可用", "F1 Busy");
             SetControlText(dialog, IDC_STATUS, idleStatus);
 #else
             RestoreHotkey(dialog);
@@ -659,12 +660,22 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
     return FALSE;
 }
 
+#ifdef PICOCLICKER_ASCII
+// Share both calls' caption and flags in the experimental machine code.
+static __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
+{
+    MessageBox(dialog, text, "PicoClicker", MB_ICONERROR);
+}
+#else
+#define ShowRunError(dialog, text) MessageBox((dialog), (text), L"PicoClicker", MB_ICONERROR)
+#endif
+
 static __declspec(noinline) int Run(HINSTANCE instance)
 {
-    HWND dialog = CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_MAIN), NULL, DialogProc, 0);
+    HWND dialog = CreateDialogParam(instance, MAKEINTRESOURCE(IDD_MAIN), NULL, DialogProc, 0);
     if (!dialog)
     {
-        MessageBoxW(NULL, L"窗口创建失败", L"PicoClicker", MB_ICONERROR);
+        ShowRunError(NULL, PICO_TEXT("窗口创建失败", "UI Err"));
         return 1;
     }
 
@@ -678,7 +689,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
         if (ready == WAIT_FAILED)
         {
             Stop(dialog, NULL);
-            MessageBoxW(dialog, L"计时失败", L"PicoClicker", MB_ICONERROR);
+            ShowRunError(dialog, PICO_TEXT("计时失败", "Timer Err"));
             DestroyWindow(dialog);
             break;
         }
@@ -686,7 +697,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
         // Give queued stop commands a chance to run, even when the timer is already ready.
         MSG message;
         for (unsigned remaining = 32;
-             remaining && PeekMessageW(&message, NULL, 0, 0, PM_REMOVE);
+             remaining && PeekMessage(&message, NULL, 0, 0, PM_REMOVE);
              --remaining)
         {
             if (message.message == WM_QUIT)
@@ -695,13 +706,13 @@ static __declspec(noinline) int Run(HINSTANCE instance)
                 goto done;
             }
 #ifdef PICOCLICKER_LITE
-            if (!IsDialogMessageW(dialog, &message))
+            if (!IsDialogMessage(dialog, &message))
 #else
-            if (!HandleCaptureKey(dialog, &message) && !IsDialogMessageW(dialog, &message))
+            if (!HandleCaptureKey(dialog, &message) && !IsDialogMessage(dialog, &message))
 #endif
             {
                 TranslateMessage(&message);
-                DispatchMessageW(&message);
+                DispatchMessage(&message);
             }
         }
         // The old signal cannot belong to a run restarted while the queue was dispatched.

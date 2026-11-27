@@ -1,3 +1,4 @@
+#include "compact_cookie.h"
 #include "resource.h"
 
 .intel_syntax noprefix
@@ -20,26 +21,49 @@
 .symidx "_DialogProc@16"
 
 .text
-.globl "@Run@4"
-.def "@Run@4"
+.globl "_PicoClickerEntry@0"
+.def "_PicoClickerEntry@0"
     .scl 2
     .type 32
 .endef
-"@Run@4":
-    push ebx
-    push esi
-    push edi
-    push ebp
-    sub esp, 40
-    // Use the passed module base and image-relative references to avoid base fixups.
-    mov ebp, ecx
-    // Timer generation and drain counter, then MSG and the /GS cookie.
-    mov eax, dword ptr [ebp + ___security_cookie@IMGREL]
-    xor eax, esp
-    mov dword ptr [esp + 36], eax
+"_PicoClickerEntry@0":
+    // The entry and message loop share their module and IAT bases through ExitProcess.
+    mov ebp, offset ___ImageBase
     lea ebx, [ebp + .Lkernel_iat@IMGREL]
-    lea eax, [ebp + "_DialogProc@16"@IMGREL]
+    mov esi, dword ptr [ebp + ___security_cookie@IMGREL]
+    test esi, esi
+    jz .Lbad_cookie
+    cmp esi, INITIAL_COOKIE
+    jne .Linitialize
+.Lbad_cookie:
+    push 6                         // FAST_FAIL_GS_COOKIE_INIT
+    pop ecx
+    int 0x29
+.Linitialize:
+    push -4                        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    call_import SetProcessDpiAwarenessContext
+    sub esp, 40
+    // Timer generation and drain counter, then MSG and the /GS cookie.
+    xor esi, esp
+    mov dword ptr [esp + 36], esi
     lea edx, [ebp + .Ldialog_template@IMGREL]
+    lea esi, [ebp + .Ldialog_encoding@IMGREL]
+    mov edi, edx
+    // The encoder sizes the DWORD-aligned buffer and stream from the same RC template.
+    mov ecx, .Ldialog_words
+    cld
+.Ldecode_dialog:
+    xor eax, eax
+    lodsb
+    cmp al, 254
+    jb .Lstore_word
+    cbw                            // The 255 token becomes the template word 0xffff.
+    jne .Lstore_word
+    lodsw
+.Lstore_word:
+    stosw
+    loop .Ldecode_dialog
+    lea eax, [ebp + "_DialogProc@16"@IMGREL]
     push 0
     push eax
     push 0
@@ -163,12 +187,8 @@
     mov ecx, dword ptr [esp + 36]
     xor ecx, esp
     call "@__security_check_cookie@4"
-    mov eax, esi
-    add esp, 40
-    pop ebp
-    pop edi
-    pop esi
-    pop ebx
-    ret
+    push esi
+    call_import ExitProcess
+    int3
 
 .att_syntax prefix

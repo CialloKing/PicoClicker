@@ -112,14 +112,22 @@ __imp_\name:
     .byte 0xff, 0x53, .Ldisp\@
 .endm
 
+#ifdef __i386__
+.section .rdata,"dr"
+.Ldialog_encoding:
+    .include PICO_DIALOG_TEMPLATE
+
+.bss
+.p2align 2
+.Ldialog_template:
+    .space 2 * .Ldialog_words
+
+#include "compact_run_x86.inc"
+#include "compact_dialog_x86.inc"
+#else
 .section .rdata,"dr"
 .p2align 2
 .Ldialog_template:
     .incbin PICO_DIALOG_TEMPLATE
-
-#ifdef __i386__
-#include "compact_run_x86.inc"
-#include "compact_dialog_x86.inc"
-#else
 #include "compact_run_x64.inc"
 #endif

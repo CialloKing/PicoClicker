@@ -2,6 +2,7 @@
 #include <intrin.h>
 #include <stddef.h>
 
+#include "compact_cookie.h"
 #include "resource.h"
 
 #ifdef PICO_RESOURCE_PREFIX
@@ -714,7 +715,6 @@ _Static_assert(sizeof(MSG) == 28 && offsetof(MSG, message) == 4 && offsetof(MSG,
     "x86 message layout");
 _Static_assert(sizeof(POINT) == 8 && offsetof(POINT, y) == 4 && sizeof(INPUT) == 28,
     "x86 click layout");
-int __fastcall Run(HINSTANCE instance);
 #elif defined(PICOCLICKER_ASM_RUN)
 _Static_assert(sizeof(MSG) == 48 && offsetof(MSG, message) == 8 && offsetof(MSG, wParam) == 16,
     "x64 message layout");
@@ -779,12 +779,6 @@ done:
 }
 #endif
 
-#if defined(_M_IX86)
-#define INITIAL_COOKIE 0xBB40E64Eu
-#elif defined(_M_X64)
-#define INITIAL_COOKIE 0x00002B992DDFA232ull
-#endif
-
 #ifdef INITIAL_COOKIE
 #ifdef PICOCLICKER_LOADER_COOKIE
 // The loader replaces the on-disk sentinel. Keeping it with the read-only data
@@ -798,6 +792,7 @@ __declspec(align(64)) UINT_PTR __security_cookie;
 UINT_PTR __security_cookie_complement;
 #endif
 
+#ifndef PICOCLICKER_ASM_DIALOG
 void __cdecl __security_init_cookie(void);
 
 // The linker already supplies the module base needed to load the dialog resource.
@@ -834,3 +829,4 @@ __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
 }
+#endif

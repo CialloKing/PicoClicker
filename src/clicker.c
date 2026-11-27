@@ -21,6 +21,7 @@ struct PicoRunData
     UINT generation;
 #ifdef _M_X64
     BYTE selectedButton;
+    BYTE closing;
 #endif
     HANDLE timer;
     LPCSTR idleStatus;
@@ -39,6 +40,7 @@ _Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
     offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
 #else
 _Static_assert(offsetof(struct PicoRunData, selectedButton) == 4 &&
+    offsetof(struct PicoRunData, closing) == 5 &&
     offsetof(struct PicoRunData, timer) == 8 &&
     offsetof(struct PicoRunData, idleStatus) == 16 &&
     offsetof(struct PicoRunData, clickPair) == 24 &&

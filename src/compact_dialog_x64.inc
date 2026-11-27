@@ -15,12 +15,16 @@ DialogProc:
     cmp edx, 0x312                 // WM_HOTKEY
     je .Lhotkey
     cmp edx, 0x10                  // WM_CLOSE
-    je .Lclose_message
+    je .Lclosing_dialog
     cmp edx, 2                     // WM_DESTROY
-    je .Ldialog_enter
+    je .Lclosing_dialog
 .Lignored_message:
     xor eax, eax
     ret
+.Lclosing_dialog:
+    // ExitProcess releases the window and timer after the loop sees the flag.
+    mov byte ptr [rip + picoRunData + .Lclosing], 1
+    jmp .Lhandled_leaf
 .Lcommand:
     cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
     je .Ltoggle_message
@@ -29,12 +33,10 @@ DialogProc:
     ja .Lignored_message
     // Record the selection separately so an active click pair remains stable.
     mov byte ptr [rip + picoRunData + .Lselected_button], al
+.Lhandled_leaf:
     xor eax, eax
     inc al
     ret
-.Lclose_message:
-    xor edx, edx
-    jmp .Ldialog_enter
 .Lhotkey:
     cmp r8, ID_HOTKEY
     jne .Lignored_message
@@ -64,12 +66,8 @@ DialogProc:
     lea rbx, [rip + __imp_GetAncestor]
     lea rdi, [rip + picoRunData]
 
-    test dl, dl
-    jz .Lclose_dialog
-    dec dl
-    jz .Ltoggle
-    cmp dl, 1                      // WM_DESTROY after the decrement.
-    je .Ldestroy_dialog
+    cmp dl, 1
+    je .Ltoggle
 
     xor eax, eax
     mov qword ptr [rsp + 32], rax
@@ -89,15 +87,6 @@ DialogProc:
 .Lsave_idle:
     mov qword ptr [rdi + .Lidle_status], rdx
     jmp .Ltoggle_status
-.Ldestroy_dialog:
-    xor ecx, ecx
-    call_import PostQuitMessage
-    jmp .Lhandled_message
-.Lclose_dialog:
-    call .Lcancel_timer
-    mov rcx, rsi
-    call_import DestroyWindow
-    jmp .Lhandled_message
 
 .Ltoggle:
     test byte ptr [rdi + .Lgeneration], 1

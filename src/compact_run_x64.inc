@@ -5,6 +5,7 @@
 
 .set .Lgeneration, 0
 .set .Lselected_button, 4
+.set .Lclosing, 5
 .set .Ltimer, 8
 .set .Lidle_status, 16
 .set .Lclick_pair, 24
@@ -107,6 +108,8 @@ PicoClickerEntry:
     jnz .Lpeek
 
 .Lcheck_tick:
+    cmp byte ptr [rdi + .Lclosing], 0
+    jne .Lclosed
     // Queued stops and restarts invalidate the signal from the earlier timer generation.
     test r12b, 1
     jz .Lagain
@@ -159,16 +162,14 @@ PicoClickerEntry:
 .Lshow_error:
     mov rcx, rsi
     call .Lrun_error
-    test rsi, rsi                  // Dialog creation can fail before there is a window.
-    jz .Lfailed
-    mov rcx, rsi
-    call_import DestroyWindow
-.Lfailed:
     xor esi, esi
     inc esi
     jmp .Lreturn
 .Lquit:
     mov esi, dword ptr [rbp + 16]
+    jmp .Lreturn
+.Lclosed:
+    xor esi, esi
 .Lreturn:
     mov rcx, qword ptr [rsp + 96]
     xor rcx, rsp

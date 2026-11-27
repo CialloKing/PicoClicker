@@ -44,14 +44,14 @@ cmake --build --preset release-x86 --target PicoClickerExperimental
 cmake --build --preset release-x64 --target PicoClickerExperimental
 ```
 
-实验版沿用 Lite 的固定 F1 快捷键、对话框和管理员清单。它可以在磁盘上重排节数据，并将最后一个节的原始大小缩到实际有效字节数。PE 规范要求节数据按 RVA 顺序存放，原始大小也应为文件对齐值的整数倍，因此部分 Windows 版本或 PE 工具可能拒绝该布局。[Microsoft PE 节表规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers)
+实验版沿用 Lite 的固定 F1 快捷键、对话框和管理员清单。它由 Windows 加载器初始化栈保护 Cookie，并通过重排磁盘上的节数据和裁掉末节填充来减小文件。PE 规范要求节数据按 RVA 顺序存放，原始大小也应为文件对齐值的整数倍，因此部分 Windows 版本或 PE 工具可能拒绝该布局。[Microsoft PE 节表规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers)
 
 | 架构 | 打包后的 Lite | 实验性极简版 |
 | --- | ---: | ---: |
-| x86 | 4,096 字节 | 4,024 字节 |
-| x64 | 5,120 字节 | 5,014 字节 |
+| x86 | 4,096 字节 | 3,784 字节 |
+| x64 | 5,120 字节 | 4,710 字节 |
 
-两种架构均在 Windows 10 22H2 上使用仅将清单改为 `asInvoker` 的副本验证了界面启动和启停。
+两种架构均在 Windows 10 22H2 上使用仅将清单改为 `asInvoker` 的副本验证了界面启停、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#实验版第二轮)
 
 ## 本地候选
 

@@ -72,7 +72,7 @@ __imp_\name:
     end_iat
 
 .Luser_iat:
-    import CreateDialogParamA, 20
+    import CreateDialogIndirectParamA, 20
     import DestroyWindow, 4
     import DispatchMessageA, 4
     import EnableWindow, 8
@@ -111,6 +111,11 @@ __imp_\name:
     .endif
     .byte 0xff, 0x53, .Ldisp\@
 .endm
+
+.section .rdata,"dr"
+.p2align 2
+.Ldialog_template:
+    .incbin PICO_DIALOG_TEMPLATE
 
 #ifdef __i386__
 #include "compact_run_x86.inc"

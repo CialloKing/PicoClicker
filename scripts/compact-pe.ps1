@@ -22,9 +22,14 @@ function Write-U32([int] $offset, [uint32] $value) {
 
 function Get-ResourceLeaves($section) {
     # LLD emits a type, ID and language level. Only the leaf payload RVAs change.
+    if ($section.Size -lt 24) { return }
+    $types = Read-U16 ($section.RawOffset + 14)
+    if ($types -ne 2 -and ($types -ne 1 -or (Read-U32 ($section.RawOffset + 16)) -ne 24)) {
+        return
+    }
     $nodes = @(0)
     for ($depth = 0; $depth -lt 3; $depth++) {
-        $count = if ($depth -eq 0) { 2 } else { 1 }
+        $count = if ($depth -eq 0) { $types } else { 1 }
         $next = foreach ($node in $nodes) {
             if ($node % 4 -or $node + 16 + 8 * $count -gt $section.Size) { return }
             $offset = $section.RawOffset + $node
@@ -39,8 +44,8 @@ function Get-ResourceLeaves($section) {
         $nodes = @($next)
     }
 
-    if ($nodes[0] -eq $nodes[1]) { return }
-    $payloadStart = [Math]::Max($nodes[0], $nodes[1]) + 16
+    if ($types -eq 2 -and $nodes[0] -eq $nodes[1]) { return }
+    $payloadStart = [Math]::Max($nodes[0], $nodes[-1]) + 16
     if ($payloadStart -gt $section.Size) { return }
     foreach ($node in $nodes) {
         if ($node % 4) { return }
@@ -184,7 +189,7 @@ if ($packResources) {
         if ($image[$constants.RawOffset + $index] -ne 0) { return }
     }
     $resourceLeaves = @(Get-ResourceLeaves $resources)
-    if ($resourceLeaves.Count -ne 2) { return }
+    if (!$resourceLeaves.Count) { return }
 }
 
 # The retained sections fit in one header block and keep their original RVAs.

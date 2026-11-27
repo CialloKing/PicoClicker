@@ -8,7 +8,7 @@
 .Lclick_error:
     .asciz "Click Err"
 
-// CreateDialogParamA invokes this callback indirectly. Its address is taken here, outside C.
+// The dialog manager invokes this callback indirectly. Its address is taken here, outside C.
 .section .gfids$y,"dr"
 .symidx DialogProc
 
@@ -41,11 +41,11 @@ Run:
     // Center the IAT base so every call can use a signed-byte displacement.
     lea rbx, [rip + __imp_GetAncestor]
     lea rdi, [rsp + 48]
-    mov edx, IDD_MAIN
+    lea rdx, [rip + .Ldialog_template]
     xor r8d, r8d
     lea r9, [rip + DialogProc]
     mov qword ptr [rsp + 32], r8
-    call_import CreateDialogParamA
+    call_import CreateDialogIndirectParamA
     test rax, rax
     jz .Lui_failed
     mov rsi, rax

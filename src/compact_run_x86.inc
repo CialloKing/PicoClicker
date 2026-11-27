@@ -39,12 +39,13 @@
     mov dword ptr [esp + 36], eax
     lea ebx, [ebp + .Lkernel_iat@IMGREL]
     lea eax, [ebp + "_DialogProc@16"@IMGREL]
+    lea edx, [ebp + .Ldialog_template@IMGREL]
     push 0
     push eax
     push 0
-    push IDD_MAIN
+    push edx
     push ebp
-    call_import CreateDialogParamA
+    call_import CreateDialogIndirectParamA
     test eax, eax
     jz .Lui_failed
     mov esi, eax

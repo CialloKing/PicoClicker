@@ -96,8 +96,15 @@ try {
                 throw "$($executable.Name) links guard slots outside its compact load config."
             }
         }
-        if ($pe -notmatch 'Type: DIALOG \(ID 5\)' -or $pe -notmatch 'Type: MANIFEST \(ID 24\)') {
-            throw "Missing dialog or manifest resource in $($executable.Name)."
+        if ($pe -notmatch 'Type: MANIFEST \(ID 24\)') {
+            throw "Missing manifest resource in $($executable.Name)."
+        }
+        if ($experimental) {
+            if ($pe -notmatch 'Symbol: CreateDialogIndirectParamA\b' -or $pe -match 'Type: DIALOG \(ID 5\)') {
+                throw "$($executable.Name) does not use an embedded dialog template."
+            }
+        } elseif ($pe -notmatch 'Type: DIALOG \(ID 5\)') {
+            throw "Missing dialog resource in $($executable.Name)."
         }
 
         [pscustomobject]@{

@@ -173,6 +173,11 @@
     jz .Lread_interval
     mov edx, dword ptr [edi + .Lidle_status]
     jmp .Lstop
+.Lrestore_bad_interval:
+    pop edi
+.Lbad_interval:
+    lea edx, [ebp + .Linterval@IMGREL]
+    jmp .Ltoggle_status
 .Lread_interval:
     sub esp, 12
     // The first eight bytes hold the interval text, then the timer's LARGE_INTEGER.
@@ -204,10 +209,10 @@
     dec ecx
     jnz .Ldigit
     pop edi
-    test eax, eax
-    jz .Lbad_interval
-    cmp eax, 60000
+    dec eax                        // One unsigned range check rejects both zero and values over 60000.
+    cmp eax, 59999
     ja .Lbad_interval
+    inc eax
     mov dword ptr [esp], eax
     cmp dword ptr [edi + .Ltimer], 0
     jne .Lstart_timer
@@ -270,11 +275,6 @@
     lea edx, [ebp + .Lon@IMGREL]
     call .Lshow_state
     jmp .Ltoggle_return
-.Lrestore_bad_interval:
-    pop edi
-.Lbad_interval:
-    lea edx, [ebp + .Linterval@IMGREL]
-    jmp .Ltoggle_status
 .Ltimer_failed:
     lea edx, [ebp + .Ltimer_error@IMGREL]
 .Ltoggle_status:

@@ -148,7 +148,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
         foreach(clicker IN LISTS lite_targets)
             if(clicker STREQUAL "PicoClickerExperimentalImage")
-                target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=736)
+                # The experimental dialog is embedded separately; reserve only the manifest tree.
+                target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=368)
             else()
                 target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=728)
             endif()
@@ -197,7 +198,21 @@ if(TARGET PicoClickerExperimentalImage)
                 "$<$<COMPILE_LANGUAGE:C>:SHELL:${experimental_licm_flag}>")
         endif()
     endif()
-    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN)
+    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN PICOCLICKER_EMBED_DIALOG)
+    set(dialog_resource "${experimental_dir}/PicoClicker-ExperimentalDialog.res")
+    set(dialog_template "${experimental_dir}/PicoClicker-ExperimentalDialog.bin")
+    set(dialog_extractor "${CMAKE_CURRENT_SOURCE_DIR}/scripts/extract-dialog.ps1")
+    add_custom_command(
+        OUTPUT "${dialog_template}"
+        BYPRODUCTS "${dialog_resource}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${experimental_dir}"
+        COMMAND "${CMAKE_RC_COMPILER}" /nologo /dPICOCLICKER_LITE /dPICOCLICKER_ASCII /dPICOCLICKER_DIALOG_ONLY
+            /fo "${dialog_resource}" "${CMAKE_CURRENT_SOURCE_DIR}/src/clicker.rc"
+        COMMAND "${PICOCLICKER_POWERSHELL}" -NoProfile -NonInteractive -File "${dialog_extractor}"
+            -Resource "${dialog_resource}" -OutputFile "${dialog_template}"
+        DEPENDS "${dialog_extractor}" src/clicker.rc src/resource.h
+        VERBATIM
+    )
     set(import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_imports.S")
     set(import_object "${experimental_dir}/PicoClicker-ExperimentalAsm.obj")
     add_custom_command(
@@ -205,8 +220,10 @@ if(TARGET PicoClickerExperimentalImage)
         BYPRODUCTS "${experimental_dir}/PicoClicker-ExperimentalAsm.asm"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${experimental_dir}"
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
+            "/DPICO_DIALOG_TEMPLATE=\"${dialog_template}\""
             "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-ExperimentalAsm.asm" "${import_source}"
-        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h"
+        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${dialog_template}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h"
         VERBATIM
     )
     target_sources(PicoClickerExperimentalImage PRIVATE "${import_object}")

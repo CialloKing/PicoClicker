@@ -2,8 +2,11 @@
 #include <windows.h>
 #include "resource.h"
 
+#ifndef PICOCLICKER_DIALOG_ONLY
 1 RT_MANIFEST "clicker.manifest"
+#endif
 
+#ifndef PICOCLICKER_EMBED_DIALOG
 #ifdef PICOCLICKER_LITE
 #define HOTKEY_ROW_HEIGHT 0
 #else
@@ -29,3 +32,4 @@ BEGIN
     // WM_INITDIALOG fills this control with the actual hotkey status.
     LTEXT "", IDC_STATUS, 7, 65 + HOTKEY_ROW_HEIGHT, 160, 11
 END
+#endif

@@ -2,11 +2,6 @@
 
 .intel_syntax noprefix
 
-// EBX addresses the compact IAT, whose x86 entries all fit in a signed-byte displacement.
-.macro call_import name, bytes
-    call dword ptr [ebx + .Liat_\name]
-.endm
-
 // COFF x86 address operands need the imm32 form of PUSH.
 .macro push_address address
     .byte 0x68
@@ -41,7 +36,7 @@
     push 0
     push IDD_MAIN
     push ecx
-    call_import CreateDialogParamA, 20
+    call_import CreateDialogParamA
     test eax, eax
     jz .Lui_failed
     mov esi, eax
@@ -56,7 +51,7 @@
     push -1                        // INFINITE
     push_address _timer
     push eax
-    call_import MsgWaitForMultipleObjectsEx, 20
+    call_import MsgWaitForMultipleObjectsEx
     inc eax
     jz .Lwait_failed               // WAIT_FAILED was -1
     mov dword ptr [esp + 4], eax
@@ -69,20 +64,20 @@
     push eax
     push eax
     push edi
-    call_import PeekMessageA, 20
+    call_import PeekMessageA
     test eax, eax
     jz .Lcheck_tick
     cmp dword ptr [edi + 4], 0x12  // WM_QUIT
     je .Lquit
     push edi
     push esi
-    call_import IsDialogMessageA, 8
+    call_import IsDialogMessageA
     test eax, eax
     jnz .Ldrain
     push edi
-    call_import TranslateMessage, 4
+    call_import TranslateMessage
     push edi
-    call_import DispatchMessageA, 4
+    call_import DispatchMessageA
 .Ldrain:
     dec ebp
     jnz .Lpeek
@@ -102,22 +97,22 @@
 .Lclick:
     // The message queue is drained. Reuse its buffer for the POINT passed to Win32.
     push edi
-    call_import GetCursorPos, 4
+    call_import GetCursorPos
     test eax, eax
     jz .Lagain
     push dword ptr [edi + 4]
     push dword ptr [edi]
-    call_import WindowFromPoint, 8
+    call_import WindowFromPoint
     push 2                         // GA_ROOT
     push eax
-    call_import GetAncestor, 8
+    call_import GetAncestor
     // A press over the clicker's own window must not toggle its controls.
     cmp eax, esi
     je .Lagain
     push 28
     push_address _clickPair
     push 2
-    call_import SendInput, 12
+    call_import SendInput
     cmp eax, 2
     je .Lagain
     dec eax
@@ -126,7 +121,7 @@
     push 28
     push_address _clickPair+28
     push 1
-    call_import SendInput, 12
+    call_import SendInput
 .Lclick_failed:
     mov ecx, esi
     mov edx, offset .Lclick_error
@@ -141,7 +136,7 @@
     mov edx, offset _PicoTimerError
     call "@ShowRunError@8"
     push esi
-    call_import DestroyWindow, 4
+    call_import DestroyWindow
     jmp .Lfailed
 .Lui_failed:
     xor ecx, ecx

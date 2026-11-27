@@ -13,7 +13,7 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 };
 #endif
 
-#ifdef PICOCLICKER_X86_ASM
+#ifdef PICOCLICKER_ASM_RUN
 #define ASM_SHARED
 #define ASM_FASTCALL __fastcall
 const char PicoTimerError[] = "Timer Err";
@@ -551,7 +551,7 @@ static void Toggle(HWND dialog)
     ShowRunState(dialog, PICO_TEXT("连点中", "On"));
 }
 
-#ifndef PICOCLICKER_X86_ASM
+#ifndef PICOCLICKER_ASM_RUN
 static void Click(HWND dialog)
 {
     // A click started with the mouse must not immediately click the app's own button.
@@ -687,13 +687,18 @@ ASM_FASTCALL __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
 #define ShowRunError(dialog, text) MessageBox((dialog), (text), L"PicoClicker", MB_ICONERROR)
 #endif
 
-#ifdef PICOCLICKER_X86_ASM
+#if defined(PICOCLICKER_ASM_RUN) && defined(_M_IX86)
 // The assembly keeps MSG and POINT in one slot and writes one INPUT pair.
 _Static_assert(sizeof(MSG) == 28 && offsetof(MSG, message) == 4 && offsetof(MSG, wParam) == 8,
     "x86 message layout");
 _Static_assert(sizeof(POINT) == 8 && offsetof(POINT, y) == 4 && sizeof(INPUT) == 28,
     "x86 click layout");
 int __fastcall Run(HINSTANCE instance);
+#elif defined(PICOCLICKER_ASM_RUN)
+_Static_assert(sizeof(MSG) == 48 && offsetof(MSG, message) == 8 && offsetof(MSG, wParam) == 16,
+    "x64 message layout");
+_Static_assert(sizeof(POINT) == 8 && sizeof(INPUT) == 40, "x64 click layout");
+int Run(HINSTANCE instance);
 #else
 static __declspec(noinline) int Run(HINSTANCE instance)
 {

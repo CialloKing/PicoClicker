@@ -21,11 +21,11 @@ PicoImportDescriptors:
 #ifdef __i386__
     .globl "__imp__\name@\stdcall_bytes"
 "__imp__\name@\stdcall_bytes":
-    .set .Liat_\name, . - .Lkernel_iat
 #else
     .globl __imp_\name
 __imp_\name:
 #endif
+    .set .Liat_\name, . - .Lkernel_iat
     .rva .Lhint_\name
 #ifdef __x86_64__
     .long 0
@@ -95,6 +95,22 @@ __imp_\name:
 .Luser_name:
     .asciz "USER32.dll"
 
+// LLVM otherwise reserves a four-byte displacement for these section-relative constants.
+// The same FF /2 encoding calls through EBX in PE32 and RBX in PE32+.
+.macro call_import name
+#ifdef __i386__
+    .set .Ldisp\@, .Liat_\name
+#else
+    .set .Ldisp\@, .Liat_\name - .Liat_GetAncestor
+#endif
+    .if .Ldisp\@ < -128 || .Ldisp\@ > 127
+        .error "Compact IAT displacement does not fit in one byte"
+    .endif
+    .byte 0xff, 0x53, .Ldisp\@
+.endm
+
 #ifdef __i386__
 #include "compact_run_x86.inc"
+#else
+#include "compact_run_x64.inc"
 #endif

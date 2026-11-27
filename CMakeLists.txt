@@ -184,18 +184,30 @@ if(TARGET PicoClickerExperimentalImage)
 
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
         set(import_triple i686-pc-windows-msvc)
+        target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_X86_ASM)
+        set(asm_dependencies
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x86.inc"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h"
+        )
     else()
         set(import_triple x86_64-pc-windows-msvc)
+        # Leave invariant loads at their call sites in the shorter experimental message loop.
+        set(experimental_licm_flag "/clang:-mllvm /clang:-disable-machine-licm")
+        check_c_compiler_flag("${experimental_licm_flag}" PICO_HAVE_EXPERIMENTAL_LICM_FLAG)
+        if(PICO_HAVE_EXPERIMENTAL_LICM_FLAG)
+            target_compile_options(PicoClickerExperimentalImage PRIVATE
+                "$<$<COMPILE_LANGUAGE:C>:SHELL:${experimental_licm_flag}>")
+        endif()
     endif()
     set(import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_imports.S")
-    set(import_object "${experimental_dir}/PicoClicker-Imports.obj")
+    set(import_object "${experimental_dir}/PicoClicker-ExperimentalAsm.obj")
     add_custom_command(
         OUTPUT "${import_object}"
-        BYPRODUCTS "${experimental_dir}/PicoClicker-Imports.asm"
+        BYPRODUCTS "${experimental_dir}/PicoClicker-ExperimentalAsm.asm"
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${experimental_dir}"
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
-            "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-Imports.asm" "${import_source}"
-        DEPENDS "${import_source}"
+            "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-ExperimentalAsm.asm" "${import_source}"
+        DEPENDS "${import_source}" ${asm_dependencies}
         VERBATIM
     )
     target_sources(PicoClickerExperimentalImage PRIVATE "${import_object}")

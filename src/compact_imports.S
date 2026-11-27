@@ -1,6 +1,6 @@
 // The experimental image resolves its unbound imports through FirstThunk.
 #ifdef __i386__
-// The data-only object is compatible with /SAFESEH.
+// The x86 assembly installs no SEH handlers.
 .set @feat.00, 1
 #endif
 
@@ -21,6 +21,7 @@ PicoImportDescriptors:
 #ifdef __i386__
     .globl "__imp__\name@\stdcall_bytes"
 "__imp__\name@\stdcall_bytes":
+    .set .Liat_\name, . - .Lkernel_iat
 #else
     .globl __imp_\name
 __imp_\name:
@@ -85,7 +86,6 @@ __imp_\name:
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     import TranslateMessage, 4
-    import UnregisterHotKey, 8
     import WindowFromPoint, 8
     end_iat
 
@@ -94,3 +94,7 @@ __imp_\name:
     .asciz "KERNEL32.dll"
 .Luser_name:
     .asciz "USER32.dll"
+
+#ifdef __i386__
+#include "compact_run_x86.inc"
+#endif

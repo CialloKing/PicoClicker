@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <intrin.h>
+#include <stddef.h>
 
 #include "resource.h"
 
@@ -12,10 +13,20 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 };
 #endif
 
-static HANDLE timer;
-static INPUT clickPair[2];
+#ifdef PICOCLICKER_X86_ASM
+#define ASM_SHARED
+#define ASM_FASTCALL __fastcall
+const char PicoTimerError[] = "Timer Err";
+#else
+#define ASM_SHARED static
+#define ASM_FASTCALL static
+#define PicoTimerError PICO_TEXT("计时器启动失败", "Timer Err")
+#endif
+
+ASM_SHARED HANDLE timer;
+ASM_SHARED INPUT clickPair[2];
 // Each transition advances the generation. Odd generations are active.
-static UINT runState;
+ASM_SHARED UINT runState;
 
 #ifdef PICOCLICKER_LITE
 static LPCTSTR idleStatus;
@@ -437,7 +448,7 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 }
 #endif
 
-static void Stop(HWND dialog, LPCTSTR status)
+ASM_FASTCALL void Stop(HWND dialog, LPCTSTR status)
 {
     if (runState & 1)
     {
@@ -531,7 +542,7 @@ static void Toggle(HWND dialog)
     due.QuadPart = -(LONG)(interval * 10000u);
     if (!timer || !SetWaitableTimer(timer, &due, (LONG)interval, NULL, NULL, FALSE))
     {
-        SetControlText(dialog, IDC_STATUS, PICO_TEXT("计时器启动失败", "Timer Err"));
+        SetControlText(dialog, IDC_STATUS, PicoTimerError);
         return;
     }
 
@@ -540,6 +551,7 @@ static void Toggle(HWND dialog)
     ShowRunState(dialog, PICO_TEXT("连点中", "On"));
 }
 
+#ifndef PICOCLICKER_X86_ASM
 static void Click(HWND dialog)
 {
     // A click started with the mouse must not immediately click the app's own button.
@@ -560,8 +572,9 @@ static void Click(HWND dialog)
         Stop(dialog, PICO_TEXT("点击失败", "Click Err"));
     }
 }
+#endif
 
-static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
+ASM_SHARED INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
     {
@@ -643,7 +656,11 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             return TRUE;
         case WM_DESTROY:
 #ifdef PICOCLICKER_LITE
+#ifdef PICOCLICKER_ASCII
+            // The experimental dialog owns F1 for the process lifetime.
+#else
             UnregisterHotKey(dialog, ID_HOTKEY);
+#endif
 #else
             if (capture.key != CAPTURE_IDLE)
             {
@@ -662,7 +679,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
 
 #ifdef PICOCLICKER_ASCII
 // Share both calls' caption and flags in the experimental machine code.
-static __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
+ASM_FASTCALL __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
 {
     MessageBox(dialog, text, "PicoClicker", MB_ICONERROR);
 }
@@ -670,6 +687,14 @@ static __declspec(noinline) void ShowRunError(HWND dialog, LPCSTR text)
 #define ShowRunError(dialog, text) MessageBox((dialog), (text), L"PicoClicker", MB_ICONERROR)
 #endif
 
+#ifdef PICOCLICKER_X86_ASM
+// The assembly keeps MSG and POINT in one slot and writes one INPUT pair.
+_Static_assert(sizeof(MSG) == 28 && offsetof(MSG, message) == 4 && offsetof(MSG, wParam) == 8,
+    "x86 message layout");
+_Static_assert(sizeof(POINT) == 8 && offsetof(POINT, y) == 4 && sizeof(INPUT) == 28,
+    "x86 click layout");
+int __fastcall Run(HINSTANCE instance);
+#else
 static __declspec(noinline) int Run(HINSTANCE instance)
 {
     HWND dialog = CreateDialogParam(instance, MAKEINTRESOURCE(IDD_MAIN), NULL, DialogProc, 0);
@@ -726,6 +751,7 @@ done:
     // ExitProcess closes the timer handle immediately after Run returns.
     return result;
 }
+#endif
 
 #if defined(_M_IX86)
 #define INITIAL_COOKIE 0xBB40E64Eu

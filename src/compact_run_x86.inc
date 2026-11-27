@@ -51,9 +51,9 @@
     push edx
     push ebp
     call_import CreateDialogIndirectParamA
+    mov esi, eax
     test eax, eax
     jz .Lui_failed
-    mov esi, eax
     lea edi, [esp + 8]
 
 .Lwait:
@@ -148,16 +148,17 @@
 .Lwait_failed:
     xor edx, edx
     call .Lstop
-    mov ecx, esi
     lea edx, [ebp + .Ltimer_error@IMGREL]
+    jmp .Lshow_error
+.Lui_failed:
+    lea edx, [ebp + .Lui_error@IMGREL]
+.Lshow_error:
+    mov ecx, esi
     call .Lrun_error
+    test esi, esi                  // Dialog creation can fail before there is a window.
+    jz .Lfailed
     push esi
     call_import DestroyWindow
-    jmp .Lfailed
-.Lui_failed:
-    xor ecx, ecx
-    lea edx, [ebp + .Lui_error@IMGREL]
-    call .Lrun_error
 .Lfailed:
     push 1
     pop esi

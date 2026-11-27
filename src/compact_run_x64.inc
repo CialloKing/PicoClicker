@@ -64,9 +64,9 @@ PicoClickerEntry:
     lea r9, [rip + DialogProc]
     mov qword ptr [rsp + 32], r8
     call_import CreateDialogIndirectParamA
+    mov rsi, rax
     test rax, rax
     jz .Lui_failed
-    mov rsi, rax
 
 .Lwait:
     mov r12d, dword ptr [rdi + .Lgeneration]
@@ -153,16 +153,17 @@ PicoClickerEntry:
     xor edx, edx
     mov al, 1
     call .Lupdate_state
-    mov rcx, rsi
     lea rdx, [rip + .Ltimer_error]
+    jmp .Lshow_error
+.Lui_failed:
+    lea rdx, [rip + .Lui_error]
+.Lshow_error:
+    mov rcx, rsi
     call .Lrun_error
+    test rsi, rsi                  // Dialog creation can fail before there is a window.
+    jz .Lfailed
     mov rcx, rsi
     call_import DestroyWindow
-    jmp .Lfailed
-.Lui_failed:
-    xor ecx, ecx
-    lea rdx, [rip + .Lui_error]
-    call .Lrun_error
 .Lfailed:
     mov esi, 1
     jmp .Lreturn

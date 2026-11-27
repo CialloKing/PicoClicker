@@ -84,12 +84,12 @@ __imp_\name:
     import MsgWaitForMultipleObjectsEx, 20
     import PeekMessageA, 20
     import PostQuitMessage, 4
-    import RegisterHotKey, 16
+    import GetDlgItem, 8
     import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     // PE32 can spread this tail across its .text padding and PE header.
-    import GetDlgItem, 8
+    import RegisterHotKey, 16
     import EnableWindow, 8
     import TranslateMessage, 4
     // Together with the DLL names, these trailing names fill the PE header space.
@@ -114,7 +114,12 @@ __imp_\name:
     .if .Ldisp\@ < -128 || .Ldisp\@ > 127
         .error "Compact IAT displacement does not fit in one byte"
     .endif
-    .byte 0xff, \modrm, .Ldisp\@
+    .if .Ldisp\@ == 0
+        // The slot at the base needs no displacement byte.
+        .byte 0xff, \modrm - 0x40
+    .else
+        .byte 0xff, \modrm, .Ldisp\@
+    .endif
 .endm
 
 .macro tail_import name
@@ -189,7 +194,7 @@ __imp_\name:
 #else
     cmp rcx, qword ptr [rip + __security_cookie]
     jne .Lcookie_failed
-    shr rcx, 48                    // Win64 cookies must have a zero high word.
+    shr rcx, 48                    // Return with RCX zero for a valid Win64 cookie.
 #endif
     jne .Lcookie_failed
 .Lguard_check_fallback:

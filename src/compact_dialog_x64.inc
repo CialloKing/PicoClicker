@@ -7,12 +7,13 @@
     .type 32
 .endef
 DialogProc:
-    cmp edx, 0x111                 // WM_COMMAND
-    je .Lcommand
+    mov eax, edx
+    sub eax, 0x110                 // WM_INITDIALOG and WM_COMMAND are consecutive.
+    jz .Ldialog_enter
+    dec eax
+    jz .Lcommand
     cmp edx, 0x312                 // WM_HOTKEY
     je .Lhotkey
-    cmp edx, 0x110                 // WM_INITDIALOG
-    je .Ldialog_enter
     cmp edx, 0x10                  // WM_CLOSE
     je .Lclose_message
     cmp edx, 2                     // WM_DESTROY
@@ -66,7 +67,7 @@ DialogProc:
 
     xor eax, eax
     mov qword ptr [rsp + 32], rax
-    mov edx, IDC_LEFT
+    lea edx, [rax + IDC_LEFT]
     mov r8d, 0xf1                  // BM_SETCHECK
     lea r9d, [rax + 1]             // BST_CHECKED
     call_import SendDlgItemMessageA
@@ -115,19 +116,18 @@ DialogProc:
     dec eax
     cmp eax, 4
     ja .Lbad_interval
-    lea r8d, [rax + 1]
-    lea rcx, [rsp + 48]
+    lea ecx, [rax + 1]
+    lea r8, [rsp + 48]
     xor eax, eax
 .Ldigit:
-    movzx edx, byte ptr [rcx]
+    movzx edx, byte ptr [r8]
     sub edx, '0'
     cmp edx, 9
     ja .Lbad_interval
     imul eax, eax, 10
     add eax, edx
-    inc rcx
-    dec r8d
-    jnz .Ldigit
+    inc r8
+    loop .Ldigit                   // RCX is the validated character count.
     dec eax
     cmp eax, 59999
     ja .Lbad_interval
@@ -137,7 +137,7 @@ DialogProc:
     test rcx, rcx
     jnz .Larm_timer
     xor edx, edx
-    mov r8d, 2                     // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    lea r8d, [rdx + 2]             // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
     mov r9d, 0x100002              // SYNCHRONIZE | TIMER_MODIFY_STATE
     call_import CreateWaitableTimerExA
     mov qword ptr [rdi + .Ltimer], rax
@@ -151,8 +151,8 @@ DialogProc:
     mov qword ptr [rsp + 48], rax
     lea rdx, [rsp + 48]
     xor r9d, r9d
-    mov qword ptr [rsp + 32], r9
-    mov qword ptr [rsp + 40], r9
+    xorps xmm0, xmm0
+    movaps xmmword ptr [rsp + 32], xmm0  // Both stack arguments are zero.
     call_import SetWaitableTimer
     test eax, eax
     jz .Ltimer_failed
@@ -187,7 +187,7 @@ DialogProc:
     mov rcx, qword ptr [rsp + 56]
     xor rcx, rsp
     call .Lcheck_cookie
-    mov eax, 1
+    lea eax, [rcx + 1]             // The Win64 cookie check returns with RCX zero.
     add rsp, 64
     pop rdi
     pop rsi

@@ -118,9 +118,9 @@
     push edi
     push esi
     call_import GetDlgItem
-    xor edx, edx
-    test byte ptr [ebp + _picoRunData@IMGREL + .Lgeneration], 1
-    sete dl
+    mov edx, dword ptr [ebp + _picoRunData@IMGREL + .Lgeneration]
+    not edx
+    and edx, 1
     push edx
     push eax
     call_import EnableWindow

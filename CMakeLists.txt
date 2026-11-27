@@ -101,7 +101,10 @@ foreach(clicker IN LISTS clicker_targets)
     target_compile_definitions(${clicker} PRIVATE WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00)
     target_compile_options(${clicker} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${compile_options}>")
     target_link_options(${clicker} PRIVATE ${link_options})
-    target_link_libraries(${clicker} PRIVATE kernel32 user32 libcmt libvcruntime)
+    if(NOT clicker STREQUAL "PicoClickerExperimentalImage")
+        target_link_libraries(${clicker} PRIVATE kernel32 user32)
+    endif()
+    target_link_libraries(${clicker} PRIVATE libcmt libvcruntime)
     if(dos_stub)
         set_property(TARGET ${clicker} APPEND PROPERTY LINK_DEPENDS "${dos_stub}")
     endif()
@@ -158,6 +161,9 @@ foreach(clicker IN LISTS loader_cookie_targets)
 endforeach()
 
 if(TARGET PicoClickerExperimentalImage)
+    # Every target declares its libraries above. Omit CMake's implicit Win32
+    # libraries so a missing entry in the experimental IAT is a link error.
+    set(CMAKE_C_STANDARD_LIBRARIES "")
     set_target_properties(PicoClickerExperimentalImage PROPERTIES
         EXCLUDE_FROM_ALL TRUE
         OUTPUT_NAME PicoClicker-Experimental-linked
@@ -167,6 +173,26 @@ if(TARGET PicoClickerExperimentalImage)
     if(multi_config)
         string(APPEND experimental_dir "/$<CONFIG>")
     endif()
+
+    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
+        set(import_triple i686-pc-windows-msvc)
+    else()
+        set(import_triple x86_64-pc-windows-msvc)
+    endif()
+    set(import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_imports.S")
+    set(import_object "${experimental_dir}/PicoClicker-Imports.obj")
+    add_custom_command(
+        OUTPUT "${import_object}"
+        BYPRODUCTS "${experimental_dir}/PicoClicker-Imports.asm"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${experimental_dir}"
+        COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
+            "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-Imports.asm" "${import_source}"
+        DEPENDS "${import_source}"
+        VERBATIM
+    )
+    target_sources(PicoClickerExperimentalImage PRIVATE "${import_object}")
+    target_link_options(PicoClickerExperimentalImage PRIVATE /INCLUDE:PicoImportDescriptors)
+
     set(experimental_exe "${experimental_dir}/PicoClicker-Experimental.exe")
     set(experimental_packer "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-experimental-pe.ps1")
     add_custom_command(

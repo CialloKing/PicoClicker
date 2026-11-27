@@ -48,9 +48,6 @@ PicoClickerEntry:
     mov ecx, 6                     // FAST_FAIL_GS_COOKIE_INIT
     int 0x29
 .Linitialize:
-    mov rax, rsi
-    not rax
-    mov qword ptr [rip + __security_cookie_complement], rax
     // After the shadow space: fifth argument, wait result, MSG, then the /GS cookie.
     xor rsi, rsp
     mov qword ptr [rsp + 96], rsi
@@ -141,7 +138,7 @@ PicoClickerEntry:
     dec eax
     jnz .Lclick_failed
     // Release the button if SendInput accepted only the press.
-    mov ecx, 1
+    lea ecx, [rax + 1]
     lea rdx, [rdi + .Lclick_pair + .Linput_size]
     mov r8d, .Linput_size
     call_import SendInput
@@ -149,7 +146,7 @@ PicoClickerEntry:
     lea rdx, [rip + .Lclick_error]
     mov al, 1
     call .Lupdate_state
-    jmp .Lwait
+    jmp .Lagain
 
 .Lwait_failed:
     xor edx, edx

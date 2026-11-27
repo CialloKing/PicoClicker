@@ -6,8 +6,39 @@
     .scl 2
     .type 32
 .endef
-.seh_proc DialogProc
 DialogProc:
+    cmp edx, 0x111                 // WM_COMMAND
+    je .Lcommand
+    cmp edx, 0x312                 // WM_HOTKEY
+    je .Lhotkey
+    cmp edx, 0x110                 // WM_INITDIALOG
+    je .Ldialog_enter
+    cmp edx, 0x10                  // WM_CLOSE
+    je .Lclose_message
+    cmp edx, 2                     // WM_DESTROY
+    je .Ldialog_enter
+.Lignored_message:
+    xor eax, eax
+    ret
+.Lcommand:
+    cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
+    je .Ltoggle_message
+    cmp r8w, 2                     // IDCANCEL ignores the notification code.
+    jne .Lignored_message
+.Lclose_message:
+    xor edx, edx
+    jmp .Ldialog_enter
+.Lhotkey:
+    cmp r8, ID_HOTKEY
+    jne .Lignored_message
+    cmp r9, 0x700000               // VK_F1 and no modifiers
+    jne .Lignored_message
+.Ltoggle_message:
+    mov dl, 1
+
+// Only handled messages enter the unwindable frame, with DL selecting the action.
+.seh_proc .Ldialog_enter
+.Ldialog_enter:
     push rbx
     .seh_pushreg rbx
     push rsi
@@ -26,38 +57,18 @@ DialogProc:
     lea rbx, [rip + __imp_GetAncestor]
     lea rdi, [rip + picoRunData]
 
-    cmp edx, 0x111                 // WM_COMMAND
-    je .Lcommand
-    cmp edx, 0x312                 // WM_HOTKEY
-    je .Lhotkey
-    cmp edx, 0x110                 // WM_INITDIALOG
-    je .Linitialize_dialog
-    cmp edx, 0x10                  // WM_CLOSE
-    je .Lclose_dialog
-    cmp edx, 2                     // WM_DESTROY
-    jne .Lignored_message
-    xor ecx, ecx
-    call_import PostQuitMessage
-    jmp .Lhandled_message
-.Lcommand:
-    cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
-    je .Ltoggle
-    cmp r8w, 2                     // IDCANCEL ignores the notification code.
-    je .Lclose_dialog
-    jmp .Lignored_message
-.Lhotkey:
-    cmp r8, ID_HOTKEY
-    jne .Lignored_message
-    cmp r9, 0x700000               // VK_F1 and no modifiers
-    je .Ltoggle
-    jmp .Lignored_message
+    test dl, dl
+    jz .Lclose_dialog
+    dec dl
+    jz .Ltoggle
+    cmp dl, 1                      // WM_DESTROY after the decrement.
+    je .Ldestroy_dialog
 
-.Linitialize_dialog:
     xor eax, eax
     mov qword ptr [rsp + 32], rax
     mov edx, IDC_LEFT
     mov r8d, 0xf1                  // BM_SETCHECK
-    mov r9d, 1                     // BST_CHECKED
+    lea r9d, [rax + 1]             // BST_CHECKED
     call_import SendDlgItemMessageA
     mov rcx, rsi
     mov edx, ID_HOTKEY
@@ -71,6 +82,10 @@ DialogProc:
 .Lsave_idle:
     mov qword ptr [rdi + .Lidle_status], rdx
     jmp .Ltoggle_status
+.Ldestroy_dialog:
+    xor ecx, ecx
+    call_import PostQuitMessage
+    jmp .Lhandled_message
 .Lclose_dialog:
     xor edx, edx
     mov al, 1
@@ -90,12 +105,12 @@ DialogProc:
     lea rdx, [rip + .Linterval]
     jmp .Ltoggle_status
 .Lread_interval:
-    lea rax, [rsp + 48]
-    mov qword ptr [rsp + 32], rax
+    lea r9, [rsp + 48]
+    mov qword ptr [rsp + 32], r9
     mov rcx, rsi
     mov edx, IDC_INTERVAL
-    mov r8d, 0x0d                  // WM_GETTEXT
-    mov r9d, 7                     // Read an extra byte to detect truncation.
+    lea r8d, [rdx + 0x0d - IDC_INTERVAL]  // WM_GETTEXT
+    lea r9d, [rdx + 7 - IDC_INTERVAL]     // Read an extra byte to detect truncation.
     call_import SendDlgItemMessageA
     dec eax
     cmp eax, 4
@@ -169,15 +184,10 @@ DialogProc:
 .Ltoggle_status:
     call .Lstatus
 .Lhandled_message:
-    mov esi, 1
-    jmp .Ldialog_return
-.Lignored_message:
-    xor esi, esi
-.Ldialog_return:
     mov rcx, qword ptr [rsp + 56]
     xor rcx, rsp
     call .Lcheck_cookie
-    mov eax, esi
+    mov eax, 1
     add rsp, 64
     pop rdi
     pop rsi
@@ -212,9 +222,9 @@ DialogProc:
     mov edx, ebp
     call_import GetDlgItem
     mov rcx, rax
-    xor edx, edx
-    test byte ptr [rdi + .Lgeneration], 1
-    sete dl
+    mov edx, dword ptr [rdi + .Lgeneration]
+    not edx
+    and edx, 1
     call_import EnableWindow
     inc ebp
     cmp ebp, IDC_RIGHT + 1

@@ -47,8 +47,8 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
             endif()
         endif()
     endif()
-    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64" AND CMAKE_LINKER_TYPE MATCHES "^(LLD|MSVC)$")
-        # Supply a small GuardMemcpy target to builds using the CRT's full load config.
+    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64" AND CMAKE_LINKER_TYPE STREQUAL "MSVC")
+        # The MSVC linker builds still use the CRT's full load config and its GuardMemcpy slot.
         set(guard_memcpy_source src/compact_memcpy.c)
         set_property(SOURCE src/compact_memcpy.c APPEND PROPERTY COMPILE_OPTIONS /clang:-ffreestanding)
     endif()
@@ -91,9 +91,7 @@ endforeach()
 
 if(guard_memcpy_source)
     target_sources(PicoClicker PRIVATE ${guard_memcpy_source})
-    if(CMAKE_LINKER_TYPE STREQUAL "MSVC")
-        target_sources(PicoClickerLite PRIVATE ${guard_memcpy_source})
-    endif()
+    target_sources(PicoClickerLite PRIVATE ${guard_memcpy_source})
 endif()
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
@@ -106,12 +104,21 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
         target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
         target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+        # In the full dialog, branching directly and loading imports at the call sites
+        # saves registers and shortens the message loop. LLVM's private flags can vary by version.
+        include(CheckCCompilerFlag)
+        set(dialog_size_flags "/clang:-mllvm /clang:-disable-machine-licm /clang:-mllvm /clang:-x86-br-merging-base-cost=-1")
+        check_c_compiler_flag("${dialog_size_flags}" PICO_HAVE_DIALOG_SIZE_FLAGS)
+        if(PICO_HAVE_DIALOG_SIZE_FLAGS)
+            target_compile_options(PicoClicker PRIVATE "$<$<COMPILE_LANGUAGE:C>:SHELL:${dialog_size_flags}>")
+        endif()
+        # Packing checks each map for references to guard slots past the compact CFG prefix.
+        foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
+            target_sources(${clicker} PRIVATE src/compact_load_config.c)
+            target_link_options(${clicker} PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack /MAP)
+        endforeach()
         target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
-        target_link_options(PicoClicker PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack)
-        # Lite has no calls through the optional GuardMemcpy or XFG slots.
-        target_sources(PicoClickerLite PRIVATE src/compact_load_config.c)
         target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
-        target_link_options(PicoClickerLite PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack /MAP)
     endif()
 endif()
 

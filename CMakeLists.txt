@@ -72,7 +72,17 @@ list(APPEND link_options
     /DYNAMICBASE /NXCOMPAT /GUARD:CF
 )
 
-foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
+set(lite_targets PicoClickerLite)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
+    CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
+    find_program(PICOCLICKER_POWERSHELL NAMES pwsh powershell)
+    if(PICOCLICKER_POWERSHELL)
+        list(APPEND lite_targets PicoClickerExperimentalImage)
+    endif()
+endif()
+set(clicker_targets PicoClicker ${lite_targets})
+
+foreach(clicker IN LISTS clicker_targets)
     add_executable(${clicker} WIN32 ${clicker_sources})
     set_target_properties(${clicker} PROPERTIES
         C_STANDARD 11
@@ -99,10 +109,13 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
     # read-only section saves a file block. Keep the original resources until packing.
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
         # The shorter PE32 load configuration leaves more room for relocations and resources.
-        target_sources(PicoClicker PRIVATE src/compact_load_config.c)
-        target_sources(PicoClickerLite PRIVATE src/compact_load_config.c)
-        target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
-        target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
+        foreach(clicker IN LISTS clicker_targets)
+            target_sources(${clicker} PRIVATE src/compact_load_config.c)
+        endforeach()
+        foreach(clicker IN LISTS lite_targets)
+            target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=728)
+            target_link_options(${clicker} PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
+        endforeach()
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
         # In the full dialog, branching directly and loading imports at the call sites
         # saves registers and shortens the message loop. LLVM's private flags can vary by version.
@@ -113,40 +126,47 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
             target_compile_options(PicoClicker PRIVATE "$<$<COMPILE_LANGUAGE:C>:SHELL:${dialog_size_flags}>")
         endif()
         # Packing checks each map for references to guard slots past the compact CFG prefix.
-        foreach(clicker IN ITEMS PicoClicker PicoClickerLite)
+        foreach(clicker IN LISTS clicker_targets)
             target_sources(${clicker} PRIVATE src/compact_load_config.c)
             target_link_options(${clicker} PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack /MAP)
         endforeach()
         target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
-        target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
+        foreach(clicker IN LISTS lite_targets)
+            target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=728)
+        endforeach()
     endif()
 endif()
 
 # The same definition controls both the code and the compiled dialog.
-target_compile_definitions(PicoClickerLite PRIVATE PICOCLICKER_LITE)
+foreach(clicker IN LISTS lite_targets)
+    target_compile_definitions(${clicker} PRIVATE PICOCLICKER_LITE)
+endforeach()
 set_target_properties(PicoClickerLite PROPERTIES OUTPUT_NAME PicoClicker-Lite)
 
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
-    CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
-    find_program(PICOCLICKER_POWERSHELL NAMES pwsh powershell)
-    if(PICOCLICKER_POWERSHELL)
-        get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-        set(experimental_dir "${CMAKE_CURRENT_BINARY_DIR}")
-        if(multi_config)
-            string(APPEND experimental_dir "/$<CONFIG>")
-        endif()
-        set(experimental_exe "${experimental_dir}/PicoClicker-Experimental.exe")
-        set(experimental_packer "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-experimental-pe.ps1")
-        add_custom_command(
-            OUTPUT "${experimental_exe}"
-            COMMAND "${PICOCLICKER_POWERSHELL}" -NoProfile -NonInteractive -File "${experimental_packer}"
-                -Executable "$<TARGET_FILE:PicoClickerLite>" -OutputFile "${experimental_exe}"
-            DEPENDS PicoClickerLite "${experimental_packer}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-pe.ps1"
-            COMMENT "Packing the experimental PicoClicker PE"
-            VERBATIM
-        )
-        add_custom_target(PicoClickerExperimental DEPENDS "${experimental_exe}")
+if(TARGET PicoClickerExperimentalImage)
+    set_target_properties(PicoClickerExperimentalImage PROPERTIES
+        EXCLUDE_FROM_ALL TRUE
+        OUTPUT_NAME PicoClicker-Experimental-linked
+    )
+    # Use the loader's mandatory cookie initialization with the modern subsystem version.
+    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_LOADER_COOKIE)
+    target_link_options(PicoClickerExperimentalImage PRIVATE /SUBSYSTEM:WINDOWS,6.03)
+    get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    set(experimental_dir "${CMAKE_CURRENT_BINARY_DIR}")
+    if(multi_config)
+        string(APPEND experimental_dir "/$<CONFIG>")
     endif()
+    set(experimental_exe "${experimental_dir}/PicoClicker-Experimental.exe")
+    set(experimental_packer "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-experimental-pe.ps1")
+    add_custom_command(
+        OUTPUT "${experimental_exe}"
+        COMMAND "${PICOCLICKER_POWERSHELL}" -NoProfile -NonInteractive -File "${experimental_packer}"
+            -Executable "$<TARGET_FILE:PicoClickerExperimentalImage>" -OutputFile "${experimental_exe}"
+        DEPENDS PicoClickerExperimentalImage "${experimental_packer}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-pe.ps1"
+        COMMENT "Packing the experimental PicoClicker PE"
+        VERBATIM
+    )
+    add_custom_target(PicoClickerExperimental DEPENDS "${experimental_exe}")
 endif()
 
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/release-info.txt"

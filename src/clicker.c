@@ -716,9 +716,22 @@ done:
     return result;
 }
 
-#if defined(_M_IX86) || defined(_M_X64)
+#if defined(_M_IX86)
+#define INITIAL_COOKIE 0xBB40E64Eu
+#elif defined(_M_X64)
+#define INITIAL_COOKIE 0x00002B992DDFA232ull
+#endif
+
+#ifdef INITIAL_COOKIE
+#ifdef PICOCLICKER_LOADER_COOKIE
+// The loader replaces the on-disk sentinel. Keeping it with the read-only data
+// lets the entire writable section remain zero-initialized on disk.
+#pragma section(".rdata$pcookie", read)
+__declspec(allocate(".rdata$pcookie")) UINT_PTR __security_cookie = INITIAL_COOKIE;
+#else
 // Zero-initialized storage keeps these CRT globals out of the file's raw data.
 __declspec(align(64)) UINT_PTR __security_cookie;
+#endif
 UINT_PTR __security_cookie_complement;
 #endif
 
@@ -730,25 +743,29 @@ extern IMAGE_DOS_HEADER __ImageBase;
 // Initialize the cookie before entering any function that may have a protected stack frame.
 __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
 {
-#if defined(_M_IX86) || defined(_M_X64)
-#if defined(_M_IX86)
-    const UINT_PTR initialCookie = 0xBB40E64Eu;
-#else
-    const UINT_PTR initialCookie = 0x00002B992DDFA232ull;
-#endif
-
-    // Use the CRT's initial value only if the loader has left the cookie unset.
-    if (!__security_cookie)
-    {
-        __security_cookie = initialCookie;
-    }
-#endif
-    __security_init_cookie();
-#if defined(_M_IX86) || defined(_M_X64)
-    if (!__security_cookie || __security_cookie == initialCookie)
+#ifdef PICOCLICKER_LOADER_COOKIE
+    // Read the value the loader wrote, even though this code never stores to the slot.
+    UINT_PTR cookie = *(volatile UINT_PTR *)&__security_cookie;
+    if (!cookie || cookie == INITIAL_COOKIE)
     {
         __fastfail(FAST_FAIL_GS_COOKIE_INIT);
     }
+    __security_cookie_complement = ~cookie;
+#else
+#ifdef INITIAL_COOKIE
+    // Use the CRT's initial value only if the loader has left the cookie unset.
+    if (!__security_cookie)
+    {
+        __security_cookie = INITIAL_COOKIE;
+    }
+#endif
+    __security_init_cookie();
+#ifdef INITIAL_COOKIE
+    if (!__security_cookie || __security_cookie == INITIAL_COOKIE)
+    {
+        __fastfail(FAST_FAIL_GS_COOKIE_INIT);
+    }
+#endif
 #endif
     // Set awareness before creating the dialog so the embedded manifest only needs UAC.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

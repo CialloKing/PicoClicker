@@ -56,6 +56,7 @@ static UINT runState;
 
 #ifdef PICOCLICKER_LITE
 static LPCTSTR idleStatus;
+static BOOL closing;
 #else
 typedef struct
 {
@@ -677,17 +678,17 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             return TRUE;
         case WM_CLOSE:
         close:
+#ifdef PICOCLICKER_LITE
+        case WM_DESTROY:
+            // Stop before the next click. ExitProcess reclaims the dialog,
+            // timer and F1 registration as soon as the loop returns.
+            closing = TRUE;
+            return TRUE;
+#else
             Stop(dialog, NULL);
             DestroyWindow(dialog);
             return TRUE;
         case WM_DESTROY:
-#ifdef PICOCLICKER_LITE
-#ifdef PICOCLICKER_ASCII
-            // The experimental dialog owns F1 for the process lifetime.
-#else
-            UnregisterHotKey(dialog, ID_HOTKEY);
-#endif
-#else
             if (capture.key != CAPTURE_IDLE)
             {
                 KillTimer(dialog, ID_CAPTURE_TIMER);
@@ -696,9 +697,9 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             {
                 UnregisterHotKey(dialog, hotkeyId);
             }
-#endif
             PostQuitMessage(0);
             return TRUE;
+#endif
     }
     return FALSE;
 }
@@ -737,7 +738,9 @@ static __declspec(noinline) int Run(HINSTANCE instance)
         {
             Stop(dialog, NULL);
             ShowRunError(dialog, PICO_TEXT("计时失败", "Timer Err"));
+#ifndef PICOCLICKER_LITE
             DestroyWindow(dialog);
+#endif
             break;
         }
 
@@ -762,6 +765,12 @@ static __declspec(noinline) int Run(HINSTANCE instance)
                 DispatchMessage(&message);
             }
         }
+#ifdef PICOCLICKER_LITE
+        if (closing)
+        {
+            return 0;
+        }
+#endif
         // The old signal cannot belong to a run restarted while the queue was dispatched.
         if (count && ready == WAIT_OBJECT_0 && runState == waitingRun)
         {

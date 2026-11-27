@@ -143,7 +143,9 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
         set(dialog_size_flags "/clang:-mllvm /clang:-disable-machine-licm /clang:-mllvm /clang:-x86-br-merging-base-cost=-1")
         check_c_compiler_flag("${dialog_size_flags}" PICO_HAVE_DIALOG_SIZE_FLAGS)
         if(PICO_HAVE_DIALOG_SIZE_FLAGS)
-            target_compile_options(PicoClicker PRIVATE "$<$<COMPILE_LANGUAGE:C>:SHELL:${dialog_size_flags}>")
+            foreach(clicker PicoClicker PicoClickerLite)
+                target_compile_options(${clicker} PRIVATE "$<$<COMPILE_LANGUAGE:C>:SHELL:${dialog_size_flags}>")
+            endforeach()
         endif()
         # Packing checks each map for references to guard slots past the compact CFG prefix.
         foreach(clicker IN LISTS clicker_targets)
@@ -192,7 +194,7 @@ if(compact_lite)
         COMMAND "${CMAKE_COMMAND}" -E make_directory "${assembly_dir}"
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
             "/Fo${lite_import_object}" "${lite_import_source}"
-        DEPENDS "${lite_import_source}" src/compact_iat.inc
+        DEPENDS "${lite_import_source}" src/compact_iat.inc src/compact_guard_slots.inc
         VERBATIM
     )
     target_sources(PicoClickerLite PRIVATE "${lite_import_object}")
@@ -237,7 +239,8 @@ if(TARGET PicoClickerExperimentalImage)
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
             "/DPICO_DIALOG_TEMPLATE=\"${dialog_template}\""
             "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-ExperimentalAsm.asm" "${import_source}"
-        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${dialog_template}" src/compact_iat.inc
+        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${dialog_template}"
+            src/compact_iat.inc src/compact_guard_slots.inc
             "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h" "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_cookie.h"
         VERBATIM
     )

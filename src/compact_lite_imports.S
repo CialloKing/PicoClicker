@@ -17,7 +17,6 @@
 
 .Luser_iat:
     import CreateDialogParamW, 20
-    import DestroyWindow, 4
     import DispatchMessageW, 4
     import EnableWindow, 8
     import GetAncestor, 8
@@ -27,13 +26,11 @@
     import MessageBoxW, 16
     import MsgWaitForMultipleObjectsEx, 20
     import PeekMessageW, 20
-    import PostQuitMessage, 4
     import RegisterHotKey, 16
     import SendDlgItemMessageW, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
     import TranslateMessage, 4
-    import UnregisterHotKey, 8
     import WindowFromPoint, 8
     end_iat
 
@@ -42,3 +39,10 @@
     .asciz "KERNEL32.dll"
 .Luser_name:
     .asciz "USER32.dll"
+
+.intel_syntax noprefix
+.text
+.Lguard_check_fallback:
+    ret
+
+#include "compact_guard_slots.inc"

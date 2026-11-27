@@ -45,7 +45,7 @@ try {
         $stagedPath = Join-Path $staging.FullName "PicoClicker$($target.Suffix)-$($target.Name).exe"
         Copy-Item -LiteralPath $inputFile -Destination $stagedPath
         if (!$experimental) {
-            & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $stagedPath | Out-Null
+            & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $stagedPath -UseCodePadding:($target.Suffix -eq '-Lite') | Out-Null
         }
         $executable = Get-Item -LiteralPath $stagedPath
         if ($executable.Length -gt $target.MaxSize) {

@@ -79,7 +79,6 @@ __imp_\name:
     import DispatchMessageA, 4
     import GetAncestor, 8
     import GetCursorPos, 4
-    import GetDlgItem, 8
     import IsDialogMessageA, 8
     import MessageBoxA, 16
     import MsgWaitForMultipleObjectsEx, 20
@@ -89,7 +88,8 @@ __imp_\name:
     import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
-    // PE32 has room for one more name after its relocations fit in .text.
+    // PE32 can spread this tail across its .text padding and PE header.
+    import GetDlgItem, 8
     import EnableWindow, 8
     import TranslateMessage, 4
     // Together with the DLL names, these trailing names fill the PE header space.

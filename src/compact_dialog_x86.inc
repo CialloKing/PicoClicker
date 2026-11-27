@@ -175,8 +175,7 @@
     mov eax, dword ptr [ebp + ___security_cookie@IMGREL]
     xor eax, esp
     mov dword ptr [esp + 8], eax
-    mov eax, esp
-    push eax
+    push esp                       // PUSH saves the buffer address before moving ESP.
     push 7                         // Read an extra byte to reject a truncated long value.
     push 0x0d                      // WM_GETTEXT
     push IDC_INTERVAL
@@ -197,8 +196,7 @@
     imul eax, eax, 10
     add eax, edx
     inc edi
-    dec ecx
-    jnz .Ldigit
+    loop .Ldigit                   // ECX is the validated character count.
     pop edi
     dec eax                        // One unsigned range check rejects both zero and values over 60000.
     cmp eax, 59999

@@ -63,6 +63,18 @@ function Get-ImportNames([byte[]] $image, [int] $directories, $readOnly, [int] $
     $names | Sort-Object Start
 }
 
+function Get-ImportTailLayout($names, [int] $first, $text, $readOnly, [int] $textSize) {
+    $cut = [Math]::Max($names[$first].Start, ($names[0..($first - 1)].End | Measure-Object -Maximum).Maximum)
+    $size = $cut - $readOnly.Rva
+    $rawSize = [int]([Math]::Ceiling($size / 512.0) * 512)
+    [pscustomobject]@{
+        Cut = $cut
+        Size = $size
+        RawSize = $rawSize
+        FileSize = [Math]::Min($text.RawSize + $size, $rawSize + $textSize)
+    }
+}
+
 function Move-ImportNameTail([byte[]] $image, [int] $optional, [int] $directories, [int] $headers, $sections, $readOnly) {
     $reloc = $directories + 40
     $relocRva = [BitConverter]::ToUInt32($image, $reloc)
@@ -103,21 +115,38 @@ function Move-ImportNameTail([byte[]] $image, [int] $optional, [int] $directorie
     $first++
     if ($first -ge $names.Count) { return 0 }
     $start = $names[$first].Start
-    $cut = [Math]::Max($start, ($names[0..($first - 1)].End | Measure-Object -Maximum).Maximum)
-    $size = $cut - $readOnly.Rva
-    $rawSize = [int]([Math]::Ceiling($size / 512.0) * 512)
-    if ([Math]::Min($text.RawSize + $size, $rawSize + $text.Size) -ge
-        [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)) { return 0 }
+    $layout = Get-ImportTailLayout $names $first $text $readOnly $text.Size
 
-    $covered = $start
-    foreach ($name in $names[$first..($names.Count - 1)]) {
+    # If .text has padding left after relocations, it can hold the names just
+    # before the header batch. Compare final section order and size both ways.
+    $codeFirst = $first
+    $candidateEnd = 0
+    for ($index = $first - 1; $index -gt 0; $index--) {
+        $candidateStart = $names[$index].Start
+        $candidateEnd = [Math]::Max($candidateEnd, $names[$index].End)
+        $candidateOffset = $text.Size + (($candidateStart -bxor $text.Size) -band 1)
+        $candidateSize = $candidateOffset + $candidateEnd - $candidateStart
+        if ($candidateSize -gt $text.RawSize) { break }
+        $candidate = Get-ImportTailLayout $names $index $text $readOnly $candidateSize
+        if ($candidate.FileSize -lt $layout.FileSize) {
+            $layout = $candidate
+            $codeFirst = $index
+            $codeEnd = $candidateEnd
+            $codeOffset = $candidateOffset
+            $codeSize = $candidateSize
+        }
+    }
+    if ($layout.FileSize -ge [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)) { return 0 }
+
+    $covered = $names[$codeFirst].Start
+    foreach ($name in $names[$codeFirst..($names.Count - 1)]) {
         if ($name.Start -gt $covered -and ($image[($bias + $covered)..($bias + $name.Start - 1)] -ne 0)) { return 0 }
         $covered = [Math]::Max($covered, $name.End)
     }
     for ($entry = $directories; $entry -lt $minimumTable; $entry += 8) {
         $rva = [BitConverter]::ToUInt32($image, $entry)
         $length = [BitConverter]::ToUInt32($image, $entry + 4)
-        if ($length -and $rva -lt $limit -and $rva + $length -gt $cut) { return 0 }
+        if ($length -and $rva -lt $limit -and $rva + $length -gt $layout.Cut) { return 0 }
     }
     $relocOffset = if ($relocRva -lt $headers) { $relocRva } else { $text.Offset + $relocRva - $text.Rva }
     for ($block = $relocOffset; $block -lt $relocOffset + $relocSize; $block += $blockSize) {
@@ -127,7 +156,7 @@ function Move-ImportNameTail([byte[]] $image, [int] $optional, [int] $directorie
         for ($index = $block + 8; $index -lt $block + $blockSize; $index += 2) {
             $fixup = [BitConverter]::ToUInt16($image, $index)
             $rva = $page + ($fixup -band 0xfff)
-            if (($fixup -shr 12) -and $rva + $width -gt $cut -and $rva -lt $limit) { return 0 }
+            if (($fixup -shr 12) -and $rva + $width -gt $layout.Cut -and $rva -lt $limit) { return 0 }
         }
     }
 
@@ -151,10 +180,18 @@ function Move-ImportNameTail([byte[]] $image, [int] $optional, [int] $directorie
     foreach ($name in $names[$first..($names.Count - 1)]) {
         Write-U32 $image $name.Field ($target + $name.Start - $start)
     }
-    [Array]::Clear($image, $bias + $cut, $readOnly.RawSize - $size)
-    $saved = $readOnly.RawSize - $rawSize
-    $readOnly.Size = $size
-    $readOnly.RawSize = $rawSize
+    if ($codeFirst -lt $first) {
+        $codeStart = $names[$codeFirst].Start
+        [Array]::Copy($image, $bias + $codeStart, $image, $text.Offset + $codeOffset, $codeEnd - $codeStart)
+        foreach ($name in $names[$codeFirst..($first - 1)]) {
+            Write-U32 $image $name.Field ($text.Rva + $codeOffset + $name.Start - $codeStart)
+        }
+        $text.Size = $codeSize
+    }
+    [Array]::Clear($image, $bias + $layout.Cut, $readOnly.RawSize - $layout.Size)
+    $saved = $readOnly.RawSize - $layout.RawSize
+    $readOnly.Size = $layout.Size
+    $readOnly.RawSize = $layout.RawSize
     $saved
 }
 

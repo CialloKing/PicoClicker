@@ -14,6 +14,7 @@ PicoClicker 是一个原生 Windows 鼠标连点器，追求尽可能小的软�
 
 - **普通版**首次运行使用 F1。点击「快捷键」一栏的按钮，按下单键或组合键，例如 `F8` 或 `Ctrl+Alt+K`。松开主键后应用，按 `Esc` 取消。改绑成功后将快捷键保存到 `%LOCALAPPDATA%\PicoClicker.dat`，下次启动时自动读取。配置缺失、无效或保存的组合被占用时，程序尝试使用 F1。
 - **极限精简版**固定使用 F1 作为开始和停止的快捷键。F1 被占用时，可以用窗口按钮启停。
+- **实验性极简版**启动时不主动请求提升权限。需要点击以管理员权限运行的窗口时，请先退出正在运行的实验版，再右键实验版 EXE，选择「以管理员身份运行」。[Microsoft SendInput 权限说明](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 
 ## 构建
 
@@ -51,7 +52,7 @@ cmake --build --preset release-x86 --target PicoClickerExperimental
 cmake --build --preset release-x64 --target PicoClickerExperimental
 ```
 
-实验版沿用 Lite 的固定 F1 快捷键，提供极简英文界面。运行时文本使用 ASCII，窗口和控件消息使用 ANSI Win32 API。实验版启动时不主动请求提升权限。要向以管理员权限运行的窗口发送点击，可以手动以管理员身份运行实验版。[Microsoft SendInput 权限说明](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
+实验版沿用 Lite 的固定 F1 快捷键，提供极简英文界面。运行时文本使用 ASCII，窗口和控件消息使用 ANSI Win32 API。
 
 两种架构都从 `clicker.rc` 生成对话框模板，交由 `CreateDialogIndirectParamA` 创建窗口。x86 启动时把紧凑编码还原为原始模板，x64 直接使用只读模板。实验版成品省去 PE 资源目录。[Microsoft 对话框 API](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createdialogindirectparama)
 

@@ -23,8 +23,18 @@ DialogProc:
     ret
 .Lcommand:
     cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
-    jne .Lignored_message
-    jmp .Ltoggle_message
+    je .Ltoggle_message
+    .if IDC_MIDDLE != IDC_LEFT + 1 || IDC_RIGHT != IDC_LEFT + 2
+        .error "Mouse button flags must match the radio control IDs"
+    .endif
+    lea eax, [r8 - IDC_LEFT]
+    cmp eax, IDC_RIGHT - IDC_LEFT
+    ja .Lignored_message
+    // Record the selection separately so an active click pair remains stable.
+    mov byte ptr [rip + picoRunData + .Lselected_button], al
+    xor eax, eax
+    inc al
+    ret
 .Lclose_message:
     xor edx, edx
     jmp .Ldialog_enter
@@ -87,9 +97,7 @@ DialogProc:
     call_import PostQuitMessage
     jmp .Lhandled_message
 .Lclose_dialog:
-    xor edx, edx
-    mov al, 1
-    call .Lupdate_state
+    call .Lcancel_timer
     mov rcx, rsi
     call_import DestroyWindow
     jmp .Lhandled_message
@@ -97,10 +105,21 @@ DialogProc:
 .Ltoggle:
     test byte ptr [rdi + .Lgeneration], 1
     jz .Lread_interval
+    call .Lcancel_timer
+    call .Lshow_start
     mov rdx, qword ptr [rdi + .Lidle_status]
-    mov al, 1
-    call .Lupdate_state
-    jmp .Lhandled_message
+.Ltoggle_status:
+    call .Lstatus
+.Lhandled_message:
+    mov rcx, qword ptr [rsp + 56]
+    xor rcx, rsp
+    call .Lcheck_cookie
+    lea eax, [rcx + 1]             // The Win64 cookie check returns with RCX zero.
+    add rsp, 64
+    pop rdi
+    pop rsi
+    pop rbx
+    ret
 .Lbad_interval:
     lea rdx, [rip + .Linterval]
     jmp .Ltoggle_status
@@ -157,76 +176,41 @@ DialogProc:
     test eax, eax
     jz .Ltimer_failed
 
-    mov edx, IDC_MIDDLE
-    call .Lget_check
-    dec eax                       // BST_CHECKED is 1.
-    jz .Lmiddle_down
-    mov edx, IDC_RIGHT
-    call .Lget_check
-    dec eax
-    mov eax, 2                     // MOUSEEVENTF_LEFTDOWN
-    jnz .Lsave_click_pair
-    mov al, 8                      // MOUSEEVENTF_RIGHTDOWN
-    jmp .Lsave_click_pair
-.Lmiddle_down:
-    mov al, 32                     // MOUSEEVENTF_MIDDLEDOWN, EAX was zero after DEC.
-.Lsave_click_pair:
+    movzx eax, byte ptr [rdi + .Lselected_button]
+    lea rcx, [rip + .Lbutton_flags]
+    movzx eax, byte ptr [rcx + rax]
     mov dword ptr [rdi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // Each release flag follows its press flag.
     mov dword ptr [rdi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [rdi + .Lgeneration]
+    call .Lshow_stop
     lea rdx, [rip + .Lon]
-    xor eax, eax
-    call .Lupdate_state
-    jmp .Lhandled_message
+    jmp .Ltoggle_status
 .Ltimer_failed:
     lea rdx, [rip + .Ltimer_error]
-.Ltoggle_status:
-    call .Lstatus
-.Lhandled_message:
-    mov rcx, qword ptr [rsp + 56]
-    xor rcx, rsp
-    call .Lcheck_cookie
-    lea eax, [rcx + 1]             // The Win64 cookie check returns with RCX zero.
-    add rsp, 64
-    pop rdi
-    pop rsi
-    pop rbx
-    ret
+    jmp .Ltoggle_status
 .seh_endproc
 
-// Run and DialogProc share RBX (IAT), RSI (dialog) and RDI (state). AL requests
-// cancellation; RDX is the status to display, or null for cancellation alone.
-.seh_proc .Lupdate_state
-.Lupdate_state:
-    sub rsp, 56
-    .seh_stackalloc 56
-    .seh_endprologue
-    mov qword ptr [rsp + 40], rdx
-    test al, al
-    jz .Lupdate_labels
+// Advance the generation before cancelling so a pending signal is discarded.
+.Lcancel_timer:
     test byte ptr [rdi + .Lgeneration], 1
-    jz .Lafter_cancel
+    jz .Lcancel_return
     inc dword ptr [rdi + .Lgeneration]
     mov rcx, qword ptr [rdi + .Ltimer]
-    call_import CancelWaitableTimer
-.Lafter_cancel:
-    cmp qword ptr [rsp + 40], 0
-    je .Lstate_return
-.Lupdate_labels:
+    tail_import CancelWaitableTimer
+.Lcancel_return:
+    ret
+
+// Callers know which transition occurred. The leaf helpers share their Win64
+// argument area and let the API return directly to the caller.
+.Lshow_start:
     lea rdx, [rip + .Lstart]
-    test byte ptr [rdi + .Lgeneration], 1
-    jz .Ltoggle_label
+    jmp .Ltoggle_label
+.Lshow_stop:
     lea rdx, [rip + .Lstop_label]
 .Ltoggle_label:
     mov al, IDC_TOGGLE
-    call .Lset_text
-    mov rdx, qword ptr [rsp + 40]
-    call .Lstatus
-.Lstate_return:
-    add rsp, 56
-    ret
-.seh_endproc
+    jmp .Lset_text
 
 // These leaf helpers reuse the caller's shadow space and fifth argument slot.
 .Lstatus:
@@ -234,19 +218,14 @@ DialogProc:
 .Lset_text:
     mov qword ptr [rsp + 40], rdx
     movzx edx, al
-    mov r8d, 0x0c                  // WM_SETTEXT
     xor r9d, r9d
-.Lsend_control:
+    lea r8d, [r9 + 0x0c]          // WM_SETTEXT
     mov rcx, rsi
     tail_import SendDlgItemMessageA
-.Lget_check:
-    xor r9d, r9d
-    mov qword ptr [rsp + 40], r9
-    mov r8d, 0xf0                  // BM_GETCHECK
-    jmp .Lsend_control
 .Lrun_error:
     lea r8, [rip + .Ltitle]
-    mov r9d, 0x10                  // MB_ICONERROR
+    xor r9d, r9d
+    mov r9b, 0x10                  // MB_ICONERROR
     tail_import MessageBoxA
 
 .att_syntax prefix

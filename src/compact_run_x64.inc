@@ -4,6 +4,7 @@
 .intel_syntax noprefix
 
 .set .Lgeneration, 0
+.set .Lselected_button, 4
 .set .Ltimer, 8
 .set .Lidle_status, 16
 .set .Lclick_pair, 24
@@ -45,7 +46,8 @@ PicoClickerEntry:
     cmp rsi, rax
     jne .Linitialize
 .Lbad_cookie:
-    mov ecx, 6                     // FAST_FAIL_GS_COOKIE_INIT
+    xor ecx, ecx
+    mov cl, 6                      // FAST_FAIL_GS_COOKIE_INIT
     int 0x29
 .Linitialize:
     // After the shadow space: fifth argument, drain counter, MSG, then the /GS cookie.
@@ -89,7 +91,8 @@ PicoClickerEntry:
     xor edx, edx
     xor r8d, r8d
     xor r9d, r9d
-    mov dword ptr [rsp + 32], 1    // PM_REMOVE
+    lea eax, [rdx + 1]             // PM_REMOVE
+    mov dword ptr [rsp + 32], eax
     call_import PeekMessageA
     test eax, eax
     jz .Lcheck_tick
@@ -121,13 +124,15 @@ PicoClickerEntry:
     mov rcx, qword ptr [rbp]
     call_import WindowFromPoint
     mov rcx, rax
-    mov edx, 2                     // GA_ROOT
+    xor edx, edx
+    mov dl, 2                      // GA_ROOT
     call_import GetAncestor
     cmp rax, rsi
     je .Lagain
-    mov ecx, 2
+    xor ecx, ecx
+    mov cl, 2
     lea rdx, [rdi + .Lclick_pair]
-    mov r8d, .Linput_size
+    lea r8d, [rcx + .Linput_size - 2]
     call_import SendInput
     // Two submitted events give a count of 0, 1 or 2. Only 1 sets CF here.
     shr eax, 1
@@ -136,18 +141,17 @@ PicoClickerEntry:
     // Release the button if SendInput accepted only the press.
     lea ecx, [rax + 1]
     lea rdx, [rdi + .Lclick_pair + .Linput_size]
-    mov r8d, .Linput_size
+    lea r8d, [rcx + .Linput_size - 1]
     call_import SendInput
 .Lclick_failed:
+    call .Lcancel_timer
+    call .Lshow_start
     lea rdx, [rip + .Lclick_error]
-    mov al, 1
-    call .Lupdate_state
+    call .Lstatus
     jmp .Lagain
 
 .Lwait_failed:
-    xor edx, edx
-    mov al, 1
-    call .Lupdate_state
+    call .Lcancel_timer
     lea rdx, [rip + .Ltimer_error]
     jmp .Lshow_error
 .Lui_failed:
@@ -160,7 +164,8 @@ PicoClickerEntry:
     mov rcx, rsi
     call_import DestroyWindow
 .Lfailed:
-    mov esi, 1
+    xor esi, esi
+    inc esi
     jmp .Lreturn
 .Lquit:
     mov esi, dword ptr [rbp + 16]

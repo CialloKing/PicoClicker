@@ -19,6 +19,9 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 struct PicoRunData
 {
     UINT generation;
+#ifdef _M_X64
+    BYTE selectedButton;
+#endif
     HANDLE timer;
     LPCSTR idleStatus;
     INPUT clickPair[2];
@@ -29,7 +32,8 @@ _Static_assert(offsetof(struct PicoRunData, timer) == 4 &&
     offsetof(struct PicoRunData, clickPair) == 12 &&
     offsetof(INPUT, mi.dwFlags) == 16 && INPUT_MOUSE == 0, "x86 dialog state layout");
 #else
-_Static_assert(offsetof(struct PicoRunData, timer) == 8 &&
+_Static_assert(offsetof(struct PicoRunData, selectedButton) == 4 &&
+    offsetof(struct PicoRunData, timer) == 8 &&
     offsetof(struct PicoRunData, idleStatus) == 16 &&
     offsetof(struct PicoRunData, clickPair) == 24 &&
     offsetof(INPUT, mi.dwFlags) == 20 && INPUT_MOUSE == 0, "x64 dialog state layout");

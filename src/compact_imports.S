@@ -123,10 +123,16 @@ __imp_\name:
     call_import \name, 0x63
 .endm
 
+#ifdef __x86_64__
+// Moving the template lowers the .rdata floor before the import-name tail.
+.section .text$dialog,"xr"
+#else
 .section .rdata,"dr"
+#endif
 .Ldialog_encoding:
     .include PICO_DIALOG_TEMPLATE
 
+.section .rdata,"dr"
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
 .Linterval:    .asciz "1-60000ms"
@@ -141,7 +147,16 @@ __imp_\name:
 
 // The encoder sizes the DWORD-aligned buffer and stream from the same RC template.
 .macro decode_dialog
+#ifdef __x86_64__
+    .if .Ldialog_words <= 255
+        xor ecx, ecx
+        mov cl, .Ldialog_words
+    .else
+        mov ecx, .Ldialog_words
+    .endif
+#else
     mov ecx, .Ldialog_words
+#endif
     cld
 .Ldecode_dialog\@:
     xor eax, eax
@@ -172,6 +187,8 @@ __imp_\name:
 .Lstop_label:  .asciz "Stop"
 #ifdef __i386__
 .section .rdata,"dr"              // PE32 has room for only the shorter string.
+#else
+.Lbutton_flags: .byte 2, 32, 8   // MOUSEEVENTF_*DOWN in control ID order.
 #endif
 .Ltimer_error: .asciz "Timer Err"
 

@@ -1,5 +1,6 @@
 ﻿param(
-    [string] $VerificationReport
+    [string] $VerificationReport,
+    [switch] $IncludeExperimental
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +16,12 @@ $targets = @(
     @{ Name = 'x86'; Suffix = '-Lite'; MaxSize = 6KB }
     @{ Name = 'x64'; Suffix = '-Lite'; MaxSize = 7.5KB }
 )
+if ($IncludeExperimental) {
+    $targets += @(
+        @{ Name = 'x86'; Suffix = '-Experimental'; MaxSize = 6KB }
+        @{ Name = 'x64'; Suffix = '-Experimental'; MaxSize = 7.5KB }
+    )
+}
 $requiredFields = @(
     'IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE'
     'IMAGE_DLL_CHARACTERISTICS_NX_COMPAT'
@@ -30,13 +37,16 @@ try {
     $builds = foreach ($target in $targets) {
         $folder = Join-Path $root "build/release-$($target.Name)"
         $inputFile = Join-Path $folder "PicoClicker$($target.Suffix).exe"
+        $experimental = $target.Suffix -eq '-Experimental'
         $metadata = @(Get-Content -LiteralPath (Join-Path $folder 'release-info.txt'))
         if ($metadata.Count -ne 2 -or $metadata[0] -notmatch '^\d+\.\d+\.\d+$' -or !$metadata[1]) {
             throw "Invalid release metadata in $folder"
         }
         $stagedPath = Join-Path $staging.FullName "PicoClicker$($target.Suffix)-$($target.Name).exe"
         Copy-Item -LiteralPath $inputFile -Destination $stagedPath
-        & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $stagedPath | Out-Null
+        if (!$experimental) {
+            & (Join-Path $PSScriptRoot 'compact-pe.ps1') -Executable $stagedPath | Out-Null
+        }
         $executable = Get-Item -LiteralPath $stagedPath
         if ($executable.Length -gt $target.MaxSize) {
             throw "$($executable.FullName) is $($executable.Length) bytes. Budget is $($target.MaxSize) bytes."
@@ -50,6 +60,9 @@ try {
             ForEach-Object { $_.Groups[1].Value } | Sort-Object)
         if (($imports -join ',') -ine 'KERNEL32.dll,USER32.dll') {
             throw "Unexpected imports in $($target.Name) build ($($imports -join ', '))"
+        }
+        if ($experimental -and [regex]::Matches($pe, '(?m)^\s*ImportLookupTableRVA: 0x0\s*$').Count -ne 2) {
+            throw "$($executable.Name) does not use the shared import table."
         }
         foreach ($field in $requiredFields) {
             if ($pe -notmatch $field) {
@@ -65,7 +78,8 @@ try {
             if (!$flags.Success -or ([Convert]::ToUInt32($flags.Groups[1].Value, 16) -band 0x03C00000)) {
                 throw "$($executable.Name) needs the full load config for its guard flags."
             }
-            $map = Join-Path $folder "PicoClicker$($target.Suffix).map"
+            $mapSuffix = if ($experimental) { '-Experimental-linked' } else { $target.Suffix }
+            $map = Join-Path $folder "PicoClicker$mapSuffix.map"
             $tailSlots = '\b__(guard_(memcpy_fptr|xfg_\w+_fptr)|castguard_check_failure_os_handled_fptr)\b'
             if (Select-String -LiteralPath $map -Pattern $tailSlots -Quiet) {
                 throw "$($executable.Name) links guard slots outside its compact load config."
@@ -86,7 +100,7 @@ try {
 
     $version = $builds[0].Version
     if ($builds | Where-Object Version -ne $version) {
-        throw 'All four builds must use the same version.'
+        throw 'All builds must use the same version.'
     }
     $sourceCommit = git -C $root rev-parse --verify HEAD
     if ($LASTEXITCODE -ne 0) {
@@ -109,13 +123,20 @@ try {
 
     $checksums = foreach ($build in $builds) {
         $name = "PicoClicker$($build.Suffix)-$version-$($build.Name).exe"
-        $edition = if ($build.Suffix) { '极限精简版' } else { '普通版' }
+        $edition = switch ($build.Suffix) {
+            '-Experimental' { '实验性极简版' }
+            '-Lite' { '极限精简版' }
+            default { '普通版' }
+        }
         $path = Join-Path $destination $name
         Copy-Item -LiteralPath $build.File.FullName -Destination $path -Force
         $notes += "| $edition | $($build.Name) | $name | $($build.File.Length) | $($build.Toolchain) |"
         "$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
     }
-    $notes += @('', '四份 EXE 均直接导入 Kernel32.dll 和 User32.dll，并保留 ASLR、DEP、CFG 和栈保护。')
+    $notes += @('', '各 EXE 均直接导入 Kernel32.dll 和 User32.dll，并保留 ASLR、DEP、CFG 和栈保护。')
+    if ($IncludeExperimental) {
+        $notes += @('', '文件名带 Experimental 的构建采用实验性 PE 布局。需要兼容常规 PE 工具或其他 Windows 版本时，请选用普通版或 Lite。')
+    }
     if ($report) {
         $notes += @('', $report)
     }

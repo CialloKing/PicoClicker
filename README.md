@@ -35,6 +35,13 @@ cmake --build --preset release-x64
 
 每个预设都在对应的 `build/release-*` 目录生成普通版 `PicoClicker.exe` 和极限精简版 `PicoClicker-Lite.exe`。单独构建时，可在构建命令末尾加 `--target PicoClicker` 或 `--target PicoClickerLite`。
 
+使用 clang-cl 和 LLD 时，可在单独的构建目录中对普通版和 Lite 启用加载器 Cookie，生成标准 PE 布局的候选。x86 构建使用对应的预设和目录名。
+
+```bat
+cmake --preset release-x64 -B build/loader-cookie-x64 -DPICOCLICKER_STANDARD_LOADER_COOKIE=ON
+cmake --build build/loader-cookie-x64
+```
+
 ### 实验性极简版
 
 先运行上面对应架构的 CMake 配置命令，再显式构建 `PicoClickerExperimental`。该目标需要 clang-cl、LLD 和 PowerShell，并在对应构建目录生成 `PicoClicker-Experimental.exe`。
@@ -44,14 +51,14 @@ cmake --build --preset release-x86 --target PicoClickerExperimental
 cmake --build --preset release-x64 --target PicoClickerExperimental
 ```
 
-实验版沿用 Lite 的固定 F1 快捷键、对话框和管理员清单。它由 Windows 加载器初始化栈保护 Cookie，并通过重排磁盘上的节数据和裁掉末节填充来减小文件。PE 规范要求节数据按 RVA 顺序存放，原始大小也应为文件对齐值的整数倍，因此部分 Windows 版本或 PE 工具可能拒绝该布局。[Microsoft PE 节表规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers)
+实验版沿用 Lite 的固定 F1 快捷键、对话框和管理员清单。它由 Windows 加载器初始化栈保护 Cookie，用同一张表查找和接收导入地址，并裁掉磁盘上最后一个节的填充。PE 规范要求节数据按 RVA 顺序存放，原始大小也应为文件对齐值的整数倍，因此部分 Windows 版本或 PE 工具可能拒绝该布局。[Microsoft PE 节表规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers)
 
 | 架构 | 打包后的 Lite | 实验性极简版 |
 | --- | ---: | ---: |
-| x86 | 4,096 字节 | 3,784 字节 |
-| x64 | 5,120 字节 | 4,710 字节 |
+| x86 | 4,096 字节 | 3,736 字节 |
+| x64 | 5,120 字节 | 4,198 字节 |
 
-两种架构均在 Windows 10 22H2 上使用仅将清单改为 `asInvoker` 的副本验证了界面启停、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#实验版第二轮)
+两种架构均在 Windows 10 22H2 上使用仅将清单改为 `asInvoker` 的副本验证了界面启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#第三轮导入表和控件编号)
 
 ## 本地候选
 

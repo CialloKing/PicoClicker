@@ -87,16 +87,11 @@
     jz .Lcheck_tick
     cmp dword ptr [edi + 4], 0x12  // WM_QUIT
     je .Lquit
-    push edi
-    push esi
-    call_import IsDialogMessageA
-    test eax, eax
-    jnz .Ldrain
+    // Translate printable keys for the edit control without dialog navigation.
     push edi
     call_import TranslateMessage
     push edi
     call_import DispatchMessageA
-.Ldrain:
     dec byte ptr [esp + 4]
     jnz .Lpeek
 

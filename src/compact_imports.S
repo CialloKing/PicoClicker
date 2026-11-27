@@ -79,7 +79,6 @@ __imp_\name:
     import DispatchMessageA, 4
     import GetAncestor, 8
     import GetCursorPos, 4
-    import IsDialogMessageA, 8
     import MessageBoxA, 16
     import MsgWaitForMultipleObjectsEx, 20
     import PeekMessageA, 20

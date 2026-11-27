@@ -95,16 +95,11 @@ PicoClickerEntry:
     jz .Lcheck_tick
     cmp dword ptr [rbp + 8], 0x12  // WM_QUIT
     je .Lquit
-    mov rcx, rsi
-    mov rdx, rbp
-    call_import IsDialogMessageA
-    test eax, eax
-    jnz .Ldrain
+    // Translate printable keys for the edit control without dialog navigation.
     mov rcx, rbp
     call_import TranslateMessage
     mov rcx, rbp
     call_import DispatchMessageA
-.Ldrain:
     dec byte ptr [rsp + 40]
     jnz .Lpeek
 

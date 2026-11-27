@@ -23,11 +23,9 @@
     xor eax, eax
     ret 16
 .Lcommand:
-    mov edx, dword ptr [esp + 12]
-    cmp edx, IDC_TOGGLE            // BN_CLICKED is zero
-    je .Ltoggle_message
-    cmp dx, 2                      // IDCANCEL applies regardless of notification code
+    cmp dword ptr [esp + 12], IDC_TOGGLE  // BN_CLICKED is zero.
     jne .Lignored
+    jmp .Ltoggle_message
 .Lclose_message:
     xor eax, eax
     jmp .Ldialog_enter

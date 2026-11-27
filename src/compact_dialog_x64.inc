@@ -23,9 +23,8 @@ DialogProc:
     ret
 .Lcommand:
     cmp r8d, IDC_TOGGLE            // BN_CLICKED is zero.
-    je .Ltoggle_message
-    cmp r8w, 2                     // IDCANCEL ignores the notification code.
     jne .Lignored_message
+    jmp .Ltoggle_message
 .Lclose_message:
     xor edx, edx
     jmp .Ldialog_enter

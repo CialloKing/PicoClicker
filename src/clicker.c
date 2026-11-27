@@ -14,8 +14,8 @@ __declspec(allocate(".rpack")) const DWORD PicoResourcePrefix[PICO_RESOURCE_PREF
 
 static HANDLE timer;
 static INPUT clickPair[2];
-static UINT runId;
-static BOOL running;
+// Each transition advances the generation. Odd generations are active.
+static UINT runState;
 
 #ifdef PICOCLICKER_LITE
 static PCWSTR idleStatus;
@@ -61,7 +61,7 @@ static void ShowRunState(HWND dialog, PCWSTR status)
     // Share the two Win32 calls across the contiguous control IDs.
     for (int id = IDC_INTERVAL; id <= lastControl; ++id)
     {
-        BOOL enabled = !running;
+        BOOL enabled = !(runState & 1);
 #ifndef PICOCLICKER_LITE
         if (id == IDC_STATUS)
         {
@@ -78,7 +78,7 @@ static void ShowRunState(HWND dialog, PCWSTR status)
 #endif
         EnableWindow(GetDlgItem(dialog, id), enabled);
     }
-    SetControlText(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
+    SetControlText(dialog, IDC_TOGGLE, (runState & 1) ? L"停止" : L"开始");
     SetControlText(dialog, IDC_STATUS, status);
 }
 
@@ -366,7 +366,7 @@ static void FinishCapture(HWND dialog, UINT key)
 
 static void ToggleCapture(HWND dialog)
 {
-    if (running)
+    if (runState & 1)
     {
         return;
     }
@@ -439,9 +439,9 @@ static BOOL HandleCaptureKey(HWND dialog, const MSG *message)
 
 static void Stop(HWND dialog, PCWSTR status)
 {
-    if (running)
+    if (runState & 1)
     {
-        running = FALSE;
+        ++runState;
         CancelWaitableTimer(timer);
     }
     if (status)
@@ -473,26 +473,22 @@ static UINT ReadInterval(HWND dialog)
     return interval;
 }
 
-static BOOL IsClickButtonChecked(HWND dialog, int id)
-{
-    return SendDlgItemMessageW(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED;
-}
-
 static void SelectClickPair(HWND dialog)
 {
     // The zero-initialized pair is mouse input and each release flag follows its press flag.
     _Static_assert(INPUT_MOUSE == 0 && MOUSEEVENTF_LEFTUP == (MOUSEEVENTF_LEFTDOWN << 1) &&
         MOUSEEVENTF_MIDDLEUP == (MOUSEEVENTF_MIDDLEDOWN << 1) &&
         MOUSEEVENTF_RIGHTUP == (MOUSEEVENTF_RIGHTDOWN << 1), "Mouse button flags");
+    _Static_assert(IDC_RIGHT == IDC_MIDDLE + 1, "Mouse button control IDs");
 
     DWORD down = MOUSEEVENTF_LEFTDOWN;
-    if (IsClickButtonChecked(dialog, IDC_MIDDLE))
+    for (int id = IDC_MIDDLE; id <= IDC_RIGHT; ++id)
     {
-        down = MOUSEEVENTF_MIDDLEDOWN;
-    }
-    else if (IsClickButtonChecked(dialog, IDC_RIGHT))
-    {
-        down = MOUSEEVENTF_RIGHTDOWN;
+        if (SendDlgItemMessageW(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED)
+        {
+            down = id == IDC_MIDDLE ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_RIGHTDOWN;
+            break;
+        }
     }
 
     clickPair[0].mi.dwFlags = down;
@@ -501,7 +497,7 @@ static void SelectClickPair(HWND dialog)
 
 static void Toggle(HWND dialog)
 {
-    if (running)
+    if (runState & 1)
     {
 #ifdef PICOCLICKER_LITE
         Stop(dialog, idleStatus);
@@ -540,8 +536,7 @@ static void Toggle(HWND dialog)
     }
 
     SelectClickPair(dialog);
-    ++runId;
-    running = TRUE;
+    ++runState;
     ShowRunState(dialog, L"连点中");
 }
 
@@ -592,8 +587,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
 #endif
             if ((DWORD)wParam == MAKEWPARAM(IDC_TOGGLE, BN_CLICKED))
             {
-                Toggle(dialog);
-                return TRUE;
+                goto toggle;
             }
             if (LOWORD(wParam) == IDCANCEL)
             {
@@ -604,8 +598,7 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
 #ifdef PICOCLICKER_LITE
             if (wParam == ID_HOTKEY && lParam == MAKELPARAM(0, VK_F1))
             {
-                Toggle(dialog);
-                return TRUE;
+                goto toggle;
             }
             break;
 #else
@@ -639,6 +632,9 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             }
             break;
 #endif
+        toggle:
+            Toggle(dialog);
+            return TRUE;
         case WM_CLOSE:
         close:
             Stop(dialog, NULL);
@@ -675,8 +671,8 @@ static __declspec(noinline) int Run(HINSTANCE instance)
     int result = 1;
     for (;;)
     {
-        UINT waitingRun = runId;
-        DWORD count = running ? 1 : 0;
+        UINT waitingRun = runState;
+        DWORD count = waitingRun & 1;
         DWORD ready = MsgWaitForMultipleObjectsEx(count, &timer, INFINITE,
             QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         if (ready == WAIT_FAILED)
@@ -709,7 +705,7 @@ static __declspec(noinline) int Run(HINSTANCE instance)
             }
         }
         // The old signal cannot belong to a run restarted while the queue was dispatched.
-        if (count && ready == WAIT_OBJECT_0 && running && runId == waitingRun)
+        if (count && ready == WAIT_OBJECT_0 && runState == waitingRun)
         {
             Click(dialog);
         }

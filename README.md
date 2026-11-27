@@ -36,7 +36,7 @@ cmake --build --preset release-x64
 
 每个预设都在对应的 `build/release-*` 目录生成普通版 `PicoClicker.exe` 和极限精简版 `PicoClicker-Lite.exe`。单独构建时，可在构建命令末尾加 `--target PicoClicker` 或 `--target PicoClickerLite`。
 
-使用 clang-cl 和 LLD 时，可在单独的构建目录中对普通版和 Lite 启用加载器 Cookie，生成标准 PE 布局的候选。x86 构建使用对应的预设和目录名。
+使用 clang-cl 和 LLD 时，Lite 由 Windows 加载器初始化栈保护 Cookie，并共用导入查找表与地址表。也可在单独的构建目录中对普通版启用加载器 Cookie。x86 构建使用对应的预设和目录名。
 
 ```bat
 cmake --preset release-x64 -B build/loader-cookie-x64 -DPICOCLICKER_STANDARD_LOADER_COOKIE=ON
@@ -62,8 +62,8 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 
 | 架构 | 打包后的 Lite | 实验性极简版 |
 | --- | ---: | ---: |
-| x86 | 4,096 字节 | 2,042 字节 |
-| x64 | 5,120 字节 | 2,441 字节 |
+| x86 | 3,584 字节 | 2,042 字节 |
+| x64 | 4,096 字节 | 2,441 字节 |
 
 两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、运行中编辑、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#v0416-的-x64-优化)
 
@@ -75,7 +75,7 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 .\scripts\pack.ps1 -VerificationReport '本地验收记录.md'
 ```
 
-打包时，若只读数据节有足够空间，脚本会将重定位表原样搬入其中，并按实际节数缩短文件头。极限精简版和普通版 x64 在链接时为资源树预留空间，打包后窗口和清单仍位于 PE 的 `.rsrc` 节首。修改窗口资源或清单后，应重新核对预留大小和成品体积。
+打包时，脚本将重定位表原样搬入只读数据节。Lite 在该节放不下时可以使用代码节的现有填充空间。极限精简版和普通版 x64 在链接时为资源树预留空间，打包后窗口和清单位于 PE 的 `.rsrc` 节首。修改窗口资源或清单后，应重新核对预留大小和成品体积。
 
 两个 x64 版本在使用 clang-cl 和 LLD 时都采用紧凑 PE 加载配置。打包脚本会分别检查两个版本的保护标志和链接映射。各项优化的实测收益见[反汇编体积分析](docs/size-analysis-v0.4.5.md)。
 

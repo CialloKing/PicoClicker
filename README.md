@@ -33,6 +33,24 @@ cmake --build --preset release-x64
 
 每个预设都在对应的 `build/release-*` 目录生成普通版 `PicoClicker.exe` 和极限精简版 `PicoClicker-Lite.exe`。单独构建时，可在构建命令末尾加 `--target PicoClicker` 或 `--target PicoClickerLite`。
 
+### 实验性极简版
+
+先运行上面对应架构的 CMake 配置命令，再显式构建 `PicoClickerExperimental`。该目标需要 clang-cl、LLD 和 PowerShell，并在对应构建目录生成 `PicoClicker-Experimental.exe`。
+
+```bat
+cmake --build --preset release-x86 --target PicoClickerExperimental
+cmake --build --preset release-x64 --target PicoClickerExperimental
+```
+
+实验版沿用 Lite 的固定 F1 快捷键、对话框和管理员清单。它可以在磁盘上重排节数据，并将最后一个节的原始大小缩到实际有效字节数。PE 规范要求节数据按 RVA 顺序存放，原始大小也应为文件对齐值的整数倍，因此部分 Windows 版本或 PE 工具可能拒绝该布局。[Microsoft PE 节表规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#section-table-section-headers)
+
+| 架构 | 打包后的 Lite | 实验性极简版 |
+| --- | ---: | ---: |
+| x86 | 4,096 字节 | 4,024 字节 |
+| x64 | 5,120 字节 | 5,014 字节 |
+
+两种架构均在 Windows 10 22H2 上使用仅将清单改为 `asInvoker` 的副本验证了界面启动和启停。
+
 ## 本地候选
 
 两种架构构建完成后，在仓库根目录运行打包脚本。发布说明可以附上实测记录。

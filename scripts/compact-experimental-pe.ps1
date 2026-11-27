@@ -16,6 +16,20 @@ function Write-U32([byte[]] $buffer, [int] $offset, [uint32] $value) {
     [BitConverter]::GetBytes($value).CopyTo($buffer, $offset)
 }
 
+function Get-Sections([byte[]] $image, [int] $table) {
+    for ($index = 0; $index -lt 3; $index++) {
+        $header = $table + 40 * $index
+        [pscustomobject]@{
+            Header = $header
+            Name = [Text.Encoding]::ASCII.GetString($image, $header, 8).TrimEnd([char]0)
+            Size = [BitConverter]::ToUInt32($image, $header + 8)
+            Rva = [BitConverter]::ToUInt32($image, $header + 12)
+            RawSize = [BitConverter]::ToUInt32($image, $header + 16)
+            Offset = [BitConverter]::ToUInt32($image, $header + 20)
+        }
+    }
+}
+
 function Get-ImportName([byte[]] $image, [int] $field, [long] $rva, [int] $hintSize, $readOnly, [long] $iatEnd) {
     if ($rva -lt $iatEnd -or $rva + $hintSize -ge $readOnly.Rva + $readOnly.Size) { return }
     $offset = [int]($readOnly.Offset + $rva - $readOnly.Rva)
@@ -211,17 +225,7 @@ try {
         throw 'Expected a compact three-section experimental PE.'
     }
 
-    $sections = for ($index = 0; $index -lt 3; $index++) {
-        $header = $table + 40 * $index
-        [pscustomobject]@{
-            Header = $header
-            Name = [Text.Encoding]::ASCII.GetString($image, $header, 8).TrimEnd([char]0)
-            Size = [BitConverter]::ToUInt32($image, $header + 8)
-            Rva = [BitConverter]::ToUInt32($image, $header + 12)
-            RawSize = [BitConverter]::ToUInt32($image, $header + 16)
-            Offset = [BitConverter]::ToUInt32($image, $header + 20)
-        }
-    }
+    $sections = @(Get-Sections $image $table)
     if (($sections.Name -join ',') -cnotin '.text,.rdata,.data', '.text,.data,.rsrc') {
         throw 'Unexpected sections in the compact experimental PE.'
     }
@@ -235,42 +239,35 @@ try {
         throw 'Unexpected on-disk layout in the compact experimental PE.'
     }
 
-    # Base relocations have no references from application code. Compare keeping
-    # them at the read-only section's tail, using .text padding or using the headers.
+    # Moving the relocations can free space for import names even when it saves
+    # no bytes by itself. Score each placement after packing the import names.
     $reloc = $directories + 5 * 8
     $relocRva = [BitConverter]::ToUInt32($image, $reloc)
     $relocSize = [BitConverter]::ToUInt32($image, $reloc + 4)
     $copyStart = [int]([Math]::Ceiling($text.Size / 4.0) * 4)
     $codeEnd = $copyStart + $relocSize
-    $initialized = [BitConverter]::ToUInt32($image, $optional + 8)
+    $placements = @('keep')
     if ($relocSize -and $relocRva -gt $readOnly.Rva -and
         $relocRva + $relocSize -eq $readOnly.Rva + $readOnly.Size) {
         $readOnlyEnd = $relocRva - $readOnly.Rva
         $readOnlyRawSize = [int]([Math]::Ceiling($readOnlyEnd / 512.0) * 512)
-        $bestSize = [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)
-        $placement = $null
-        $inCode = [Math]::Min($text.RawSize + $readOnlyEnd, $readOnlyRawSize + $codeEnd)
-        if ($codeEnd -le $text.RawSize -and $inCode -lt $bestSize) {
-            $placement = 'code'
-            $bestSize = $inCode
+        if ($codeEnd -le $text.RawSize) {
+            $placements += 'code'
         }
 
-        $inHeaders = [Math]::Min($text.RawSize + $readOnlyEnd, $readOnlyRawSize + $text.Size)
         $directoryCount = 16
         $newTable = $table
-        if ($inHeaders -lt $bestSize) {
-            # Drop only as many empty trailing directories as needed. Keep the IAT directory.
-            while ($newTable + 120 + $relocSize -gt $headers -and $directoryCount -gt 13 -and
-                [BitConverter]::ToUInt64($image, $newTable - 8) -eq 0) {
-                $newTable -= 8
-                $directoryCount--
-            }
-            if ($newTable + 120 + $relocSize -le $headers) {
-                $placement = 'headers'
-            }
+        # Drop only as many empty trailing directories as needed. Keep the IAT directory.
+        while ($newTable + 120 + $relocSize -gt $headers -and $directoryCount -gt 13 -and
+            [BitConverter]::ToUInt64($image, $newTable - 8) -eq 0) {
+            $newTable -= 8
+            $directoryCount--
+        }
+        if ($newTable + 120 + $relocSize -le $headers) {
+            $placements += 'headers'
         }
 
-        if ($placement) {
+        if ($placements.Count -gt 1) {
             for ($index = 0; $index -lt 16; $index++) {
                 if ($index -eq 5) { continue }
                 $start = [BitConverter]::ToUInt32($image, $directories + 8 * $index)
@@ -279,7 +276,18 @@ try {
                     throw 'Another data directory overlaps the base relocation table.'
                 }
             }
+        }
+    }
 
+    $original = $image
+    $bestSize = [int]::MaxValue
+    foreach ($placement in $placements) {
+        [byte[]] $image = $original.Clone()
+        $sections = @(Get-Sections $image $table)
+        $text = $sections[0]
+        $readOnly = $sections | Where-Object Name -cin '.rdata', '.rsrc'
+        $initialized = [BitConverter]::ToUInt32($image, $optional + 8)
+        if ($placement -cne 'keep') {
             $sourceOffset = $readOnly.Offset + $readOnlyEnd
             if ($placement -ceq 'headers') {
                 $headerEnd = $newTable + 120
@@ -303,11 +311,23 @@ try {
             $initialized -= $readOnly.RawSize - $readOnlyRawSize
             $readOnly.RawSize = $readOnlyRawSize
         }
-    }
 
-    if ($readOnly.Name -ceq '.rdata') {
-        $initialized -= Move-ImportNameTail $image $optional $directories $headers $sections $readOnly
+        if ($readOnly.Name -ceq '.rdata') {
+            $initialized -= Move-ImportNameTail $image $optional $directories $headers $sections $readOnly
+        }
+        $size = [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)
+        if ($size -lt $bestSize) {
+            $bestSize = $size
+            $bestImage = $image
+            $bestText = $text
+            $bestReadOnly = $readOnly
+            $bestInitialized = $initialized
+        }
     }
+    $image = $bestImage
+    $text = $bestText
+    $readOnly = $bestReadOnly
+    $initialized = $bestInitialized
 
     # Keep the RVAs and permissions. Put the section with more padding last so only
     # its raw size may end between file-alignment boundaries.

@@ -53,4 +53,18 @@ for ($offset = 0; $offset -lt $encoded.Count; $offset += 16) {
     $count = [Math]::Min(16, $encoded.Count - $offset)
     $assembly.Add('.byte ' + ($encoded.GetRange($offset, $count) -join ', '))
 }
+
+# The runtime uses these strings as ANSI text. Alias an exact NUL-terminated
+# match in the encoded template, or emit a copy if the dialog text changes.
+$encoding = [Text.Encoding]::GetEncoding(28591).GetString($encoded.ToArray())
+$labels = [ordered]@{ '.Ltitle' = 'PicoClicker'; '.Lstart' = 'Start' }
+foreach ($entry in $labels.GetEnumerator()) {
+    $literal = $entry.Value
+    $position = $encoding.IndexOf($literal + [char]0, [StringComparison]::Ordinal)
+    if ($position -ge 0) {
+        $assembly.Add(".set $($entry.Key), .Ldialog_encoding + $position")
+    } else {
+        $assembly.Add(('{0}: .asciz "{1}"' -f $entry.Key, $literal))
+    }
+}
 [IO.File]::WriteAllLines($OutputFile, $assembly, [Text.Encoding]::ASCII)

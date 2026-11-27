@@ -125,13 +125,11 @@ __imp_\name:
 
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
-.Ltitle:       .asciz "PicoClicker"
 .Ltimer_error: .asciz "Timer Err"
 .Linterval:    .asciz "1-60000ms"
 .Lbusy:        .asciz "F1 Busy"
 .Lf1:          .asciz "F1"
 .Lon:          .asciz "On"
-.Lstart:       .asciz "Start"
 .Lstop_label:  .asciz "Stop"
 
 .bss

@@ -53,20 +53,31 @@ static void SetControlText(HWND dialog, int id, PCWSTR text)
 
 static void ShowRunState(HWND dialog, PCWSTR status)
 {
-    // These IDs are contiguous so click settings can be locked as a group.
-    for (int id = IDC_INTERVAL; id <= IDC_RIGHT; ++id)
-    {
 #ifdef PICOCLICKER_LITE
-        BOOL settingsEnabled = !running;
+    const int lastControl = IDC_RIGHT;
 #else
-        BOOL settingsEnabled = !running && capture.key == CAPTURE_IDLE;
+    const int lastControl = IDC_HOTKEY;
 #endif
-        EnableWindow(GetDlgItem(dialog, id), settingsEnabled);
-    }
+    // Share the two Win32 calls across the contiguous control IDs.
+    for (int id = IDC_INTERVAL; id <= lastControl; ++id)
+    {
+        BOOL enabled = !running;
 #ifndef PICOCLICKER_LITE
-    EnableWindow(GetDlgItem(dialog, IDC_HOTKEY), !running);
-    EnableWindow(GetDlgItem(dialog, IDC_TOGGLE), hotkeyId && capture.key == CAPTURE_IDLE);
+        if (id == IDC_STATUS)
+        {
+            continue;
+        }
+        if (id == IDC_TOGGLE)
+        {
+            enabled = hotkeyId && capture.key == CAPTURE_IDLE;
+        }
+        else if (id != IDC_HOTKEY && capture.key != CAPTURE_IDLE)
+        {
+            enabled = FALSE;
+        }
 #endif
+        EnableWindow(GetDlgItem(dialog, id), enabled);
+    }
     SetControlText(dialog, IDC_TOGGLE, running ? L"停止" : L"开始");
     SetControlText(dialog, IDC_STATUS, status);
 }
@@ -160,9 +171,29 @@ static void ShowHotkey(HWND dialog)
 
 static BOOL IsMainKey(UINT key)
 {
+#ifdef _M_X64
+    // BT indexes all 256 virtual keys. A set bit lets polling and queued messages accept the same keys.
+#define KEY_BIT(vk) (1u << ((vk) & 31u))
+    static const LONG mainKeys[] =
+    {
+        (LONG)~(0xffu | KEY_BIT(VK_SHIFT) | KEY_BIT(VK_CONTROL) | KEY_BIT(VK_MENU)),
+        -1,
+        (LONG)~(KEY_BIT(VK_LWIN) | KEY_BIT(VK_RWIN)),
+        -1,
+        -1,
+        (LONG)~(KEY_BIT(VK_LSHIFT) | KEY_BIT(VK_RSHIFT) | KEY_BIT(VK_LCONTROL) |
+            KEY_BIT(VK_RCONTROL) | KEY_BIT(VK_LMENU) | KEY_BIT(VK_RMENU)),
+        -1,
+        (LONG)~(KEY_BIT(VK_PROCESSKEY) | KEY_BIT(VK_PACKET) | KEY_BIT(0xff))
+    };
+#undef KEY_BIT
+    return key < 256 && _bittest(mainKeys, (LONG)key);
+#else
+    // On x86 the range checks leave room for relocations in the read-only section.
     return key >= VK_BACK && key <= 0xfe &&
         (key < VK_SHIFT || key > VK_MENU) && (key < VK_LWIN || key > VK_RWIN) &&
         (key < VK_LSHIFT || key > VK_RMENU) && key != VK_PROCESSKEY && key != VK_PACKET;
+#endif
 }
 
 static BOOL IsBindableHotkey(UINT key, UINT modifiers)
@@ -181,7 +212,8 @@ static WCHAR hotkeyPath[MAX_PATH];
 static WCHAR hotkeyTemporaryPath[MAX_PATH];
 static DWORD hotkeyPathLength;
 
-static DWORD GetHotkeyPath(WCHAR *path)
+// Keeping path validation out of the dialog callback makes its conditional jumps shorter.
+static __declspec(noinline) DWORD GetHotkeyPath(WCHAR *path)
 {
     // Reserve space for the temporary suffix and reject unresolved or relative paths.
     const DWORD capacity = MAX_PATH - TEMP_SUFFIX_LENGTH;
@@ -200,10 +232,14 @@ static void RestoreHotkey(HWND dialog)
     if (hotkeyPathLength)
     {
         // The profile path is fixed for the process, so later saves only write the suffix.
+#if defined(_M_IX86) || defined(_M_X64)
+        __movsw(hotkeyTemporaryPath, hotkeyPath, hotkeyPathLength);
+#else
         for (DWORD i = 0; i < hotkeyPathLength; ++i)
         {
             hotkeyTemporaryPath[i] = hotkeyPath[i];
         }
+#endif
         hotkeyTemporaryPath[hotkeyPathLength] = L'.';
         HANDLE file = CreateFileW(hotkeyPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE,
             NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -548,13 +584,13 @@ static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPA
             return TRUE;
         case WM_COMMAND:
 #ifndef PICOCLICKER_LITE
-            if (LOWORD(wParam) == IDC_HOTKEY && HIWORD(wParam) == BN_CLICKED)
+            if ((DWORD)wParam == MAKEWPARAM(IDC_HOTKEY, BN_CLICKED))
             {
                 ToggleCapture(dialog);
                 return TRUE;
             }
 #endif
-            if (LOWORD(wParam) == IDC_TOGGLE && HIWORD(wParam) == BN_CLICKED)
+            if ((DWORD)wParam == MAKEWPARAM(IDC_TOGGLE, BN_CLICKED))
             {
                 Toggle(dialog);
                 return TRUE;

@@ -64,10 +64,10 @@
     push ID_HOTKEY
     push esi
     call_import RegisterHotKey
-    lea edx, [ebp + .Lbusy@IMGREL]
+    load_iat_text .Lbusy
     test eax, eax
     jz .Lsave_idle
-    lea edx, [ebp + .Lf1@IMGREL]
+    load_iat_text .Lf1
 .Lsave_idle:
     mov dword ptr [edi + .Lidle_status], edx
     call .Lstatus
@@ -147,13 +147,13 @@
 .Lrestore_bad_interval:
     pop edi
 .Lbad_interval:
-    lea edx, [ebp + .Linterval@IMGREL]
+    load_iat_text .Linterval
     jmp .Ltoggle_status
 .Lread_interval:
     // Each start captures the interval and button; edits only affect the next start.
     sub esp, 12
     // The first eight bytes hold the interval text, then the timer's LARGE_INTEGER.
-    mov eax, dword ptr [ebp + ___security_cookie@IMGREL]
+    mov eax, dword ptr [ebx + .Lcookie_disp]
     xor eax, esp
     mov dword ptr [esp + 8], eax
     push esp                       // PUSH saves the buffer address before moving ESP.
@@ -242,11 +242,11 @@
     add eax, eax                   // The release flag follows its press flag.
     mov dword ptr [edi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [edi + .Lgeneration]
-    lea edx, [ebp + .Lon@IMGREL]
+    load_iat_text .Lon
     call .Lshow_stop
     jmp .Ltoggle_return
 .Ltimer_failed:
-    lea edx, [ebp + .Ltimer_error@IMGREL]
+    load_iat_text .Ltimer_error
 .Ltoggle_status:
     call .Lstatus
 .Ltoggle_return:

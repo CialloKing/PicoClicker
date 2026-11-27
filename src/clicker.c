@@ -771,8 +771,11 @@ done:
 #ifdef PICOCLICKER_LOADER_COOKIE
 // The loader replaces the on-disk sentinel. Keeping it with the read-only data
 // lets the entire writable section remain zero-initialized on disk.
+#if !defined(PICOCLICKER_ASM_RUN) || !defined(_M_IX86)
+// Experimental x86 places this symbol in its own IAT-adjacent assembly section.
 #pragma section(".rdata$pcookie", read)
 __declspec(allocate(".rdata$pcookie")) UINT_PTR __security_cookie = INITIAL_COOKIE;
+#endif
 #else
 // Zero-initialized storage keeps these CRT globals out of the file's raw data.
 __declspec(align(64)) UINT_PTR __security_cookie;

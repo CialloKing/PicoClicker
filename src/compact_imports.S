@@ -1,3 +1,5 @@
+#include "compact_cookie.h"
+
 // The experimental image resolves its unbound imports through FirstThunk.
 // Use the explicit .gfids list for CFG. The other calls are direct or use fixed IAT slots.
 // Make the omitted guard counts visible to pack.ps1 without allocating bytes for them.
@@ -132,13 +134,44 @@ __imp_\name:
 .Ldialog_encoding:
     .include PICO_DIALOG_TEMPLATE
 
+#ifdef __i386__
+// FirstThunk uses .idata$5. The unused lookup-table contribution can hold
+// read-only data immediately before it. The packer verifies the cookie offset.
+.section .idata$4,"dr"
+.p2align 2
+.Liat_text_begin:
+#else
 .section .rdata,"dr"
+#endif
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
 .Linterval:    .asciz "1-60000ms"
 .Lbusy:        .asciz "F1 Busy"
 .Lf1:          .asciz "F1"
 .Lon:          .asciz "On"
+
+#ifdef __i386__
+.Ltimer_error: .asciz "Timer Err"
+.set .Liat_text_size, (. - .Liat_text_begin + 3) & -4
+.p2align 2
+.globl ___security_cookie
+___security_cookie:
+    .long INITIAL_COOKIE
+.Liat_prefix_end:
+.set .Lcookie_disp, -4
+.if ___security_cookie - .Liat_prefix_end != .Lcookie_disp
+    .error "The PE32 stack cookie must occupy the DWORD before the IAT"
+.endif
+
+.macro load_iat_text name
+    .set .Ltext_disp\@, \name - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
+    .if .Ltext_disp\@ < -128 || .Ltext_disp\@ >= 0
+        .error "Read-only text must be within 128 bytes before the IAT"
+    .endif
+    // LLVM reserves disp32 for label differences. Emit LEA EDX,[EBX+disp8].
+    .byte 0x8d, 0x53, .Ltext_disp\@
+.endm
+#endif
 
 .bss
 .p2align 2
@@ -147,16 +180,12 @@ __imp_\name:
 
 // The encoder sizes the DWORD-aligned buffer and stream from the same RC template.
 .macro decode_dialog
-#ifdef __x86_64__
     .if .Ldialog_words <= 255
         xor ecx, ecx
         mov cl, .Ldialog_words
     .else
         mov ecx, .Ldialog_words
     .endif
-#else
-    mov ecx, .Ldialog_words
-#endif
     cld
 .Ldecode_dialog\@:
     xor eax, eax
@@ -185,12 +214,10 @@ __imp_\name:
 
 // The entry ends at ExitProcess. Use the padding before the CFG-aligned callback.
 .Lstop_label:  .asciz "Stop"
-#ifdef __i386__
-.section .rdata,"dr"              // PE32 has room for only the shorter string.
-#else
+#ifdef __x86_64__
 .Lbutton_flags: .byte 2, 32, 8   // MOUSEEVENTF_*DOWN in control ID order.
-#endif
 .Ltimer_error: .asciz "Timer Err"
+#endif
 
 #ifdef __i386__
 #include "compact_dialog_x86.inc"
@@ -204,7 +231,7 @@ __imp_\name:
 // A mismatch still terminates through Windows FAST_FAIL_STACK_COOKIE_CHECK.
 .Lcheck_cookie:
 #ifdef __i386__
-    cmp ecx, dword ptr [ebp + ___security_cookie@IMGREL]
+    cmp ecx, dword ptr [ebx + .Lcookie_disp]
 #else
     cmp rcx, qword ptr [rip + __security_cookie]
     jne .Lcookie_failed

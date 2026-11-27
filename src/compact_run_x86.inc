@@ -24,7 +24,7 @@
     // The entry and message loop share their module and IAT bases through ExitProcess.
     mov ebp, offset ___ImageBase
     lea ebx, [ebp + .Lkernel_iat@IMGREL]
-    mov esi, dword ptr [ebp + ___security_cookie@IMGREL]
+    mov esi, dword ptr [ebx + .Lcookie_disp]
     test esi, esi
     jz .Lbad_cookie
     cmp esi, INITIAL_COOKIE
@@ -140,7 +140,7 @@
 .Lclick_failed:
     push esi
     mov esi, dword ptr [esp + 44]  // The dialog helpers expect HWND in ESI.
-    lea edx, [ebp + .Lclick_error@IMGREL]
+    load_iat_text .Lclick_error
     call .Lstop
     pop esi
     jmp .Lagain
@@ -149,10 +149,10 @@
     mov esi, dword ptr [esp + 40]
     xor edx, edx
     call .Lstop
-    lea edx, [ebp + .Ltimer_error@IMGREL]
+    load_iat_text .Ltimer_error
     jmp .Lshow_error
 .Lui_failed:
-    lea edx, [ebp + .Lui_error@IMGREL]
+    load_iat_text .Lui_error
 .Lshow_error:
     mov ecx, esi
     call .Lrun_error

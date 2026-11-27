@@ -238,6 +238,19 @@ try {
         $readOnly.Offset + $readOnly.RawSize -ne $image.Length) {
         throw 'Unexpected on-disk layout in the compact experimental PE.'
     }
+    if ([BitConverter]::ToUInt16($image, $optional) -eq 0x10b) {
+        # PE32 addresses the cookie and preceding text relative to FirstThunk.
+        $config = [BitConverter]::ToUInt32($image, $directories + 80)
+        $iat = [BitConverter]::ToUInt32($image, $directories + 96)
+        if ($config -lt $readOnly.Rva -or $config + 64 -gt $readOnly.Rva + $readOnly.Size -or $iat -le $readOnly.Rva) {
+            throw 'Missing the PE32 load config or IAT.'
+        }
+        $cookie = [BitConverter]::ToUInt32($image, $readOnly.Offset + $config - $readOnly.Rva + 60)
+        $imageBase = [BitConverter]::ToUInt32($image, $optional + 28)
+        if ($cookie -ne $imageBase + $iat - 4) {
+            throw 'Expected the PE32 stack cookie immediately before the IAT.'
+        }
+    }
 
     # Moving the relocations can free space for import names even when it saves
     # no bytes by itself. Score each placement after packing the import names.

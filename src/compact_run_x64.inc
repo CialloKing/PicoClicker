@@ -41,9 +41,13 @@ Run:
     mov qword ptr [rsp + 96], rax
     // Center the IAT base so every call can use a signed-byte displacement.
     lea rbx, [rip + __imp_GetAncestor]
+    lea rdx, [rip + .Ldialog_template]
+    lea rsi, [rip + .Ldialog_encoding]
+    mov rdi, rdx
+    decode_dialog
     lea rdi, [rip + picoRunData]
     lea rbp, [rsp + 48]
-    lea rdx, [rip + .Ldialog_template]
+    xor ecx, ecx                   // Use the current executable as the template module.
     xor r8d, r8d
     lea r9, [rip + DialogProc]
     mov qword ptr [rsp + 32], r8

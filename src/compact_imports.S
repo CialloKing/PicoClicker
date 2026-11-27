@@ -117,14 +117,8 @@ __imp_\name:
 .endm
 
 .section .rdata,"dr"
-#ifdef __i386__
 .Ldialog_encoding:
     .include PICO_DIALOG_TEMPLATE
-#else
-.p2align 2
-.Ldialog_template:
-    .incbin PICO_DIALOG_TEMPLATE
-#endif
 
 .Lui_error:    .asciz "UI Err"
 .Lclick_error: .asciz "Click Err"
@@ -137,12 +131,29 @@ __imp_\name:
 .Lstart:       .asciz "Start"
 .Lstop_label:  .asciz "Stop"
 
-#ifdef __i386__
 .bss
 .p2align 2
 .Ldialog_template:
     .space 2 * .Ldialog_words
 
+// The encoder sizes the DWORD-aligned buffer and stream from the same RC template.
+.macro decode_dialog
+    mov ecx, .Ldialog_words
+    cld
+.Ldecode_dialog\@:
+    xor eax, eax
+    lodsb
+    cmp al, 254
+    jb .Lstore_word\@
+    cbw                            // 255 encodes the template word 0xffff.
+    jne .Lstore_word\@
+    lodsw
+.Lstore_word\@:
+    stosw
+    loop .Ldecode_dialog\@
+.endm
+
+#ifdef __i386__
 #include "compact_run_x86.inc"
 #include "compact_dialog_x86.inc"
 #else

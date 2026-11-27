@@ -704,7 +704,7 @@ _Static_assert(sizeof(POINT) == 8 && offsetof(POINT, y) == 4 && sizeof(INPUT) ==
 _Static_assert(sizeof(MSG) == 48 && offsetof(MSG, message) == 8 && offsetof(MSG, wParam) == 16,
     "x64 message layout");
 _Static_assert(sizeof(POINT) == 8 && sizeof(INPUT) == 40, "x64 click layout");
-int Run(HINSTANCE instance);
+int Run(void);
 #else
 static __declspec(noinline) int Run(HINSTANCE instance)
 {
@@ -780,8 +780,10 @@ UINT_PTR __security_cookie_complement;
 #if !defined(PICOCLICKER_ASM_RUN) || !defined(_M_IX86)
 void __cdecl __security_init_cookie(void);
 
+#ifndef PICOCLICKER_ASM_RUN
 // The linker already supplies the module base needed to load the dialog resource.
 extern IMAGE_DOS_HEADER __ImageBase;
+#endif
 
 // Initialize the cookie before entering any function that may have a protected stack frame.
 __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
@@ -812,6 +814,10 @@ __declspec(safebuffers) void WINAPI PicoClickerEntry(void)
 #endif
     // Set awareness before creating the dialog so the embedded manifest only needs UAC.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#ifdef PICOCLICKER_ASM_RUN
+    ExitProcess((UINT)Run());
+#else
     ExitProcess((UINT)Run((HINSTANCE)&__ImageBase));
+#endif
 }
 #endif

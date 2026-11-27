@@ -179,17 +179,14 @@ if(TARGET PicoClickerExperimentalImage)
         set(import_triple i686-pc-windows-msvc)
         set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x86.inc")
         set(dialog_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_dialog_x86.inc")
-        set(dialog_format inc)
-        set(dialog_options -EncodeWords)
     else()
         set(import_triple x86_64-pc-windows-msvc)
         set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x64.inc")
         set(dialog_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_dialog_x64.inc")
-        set(dialog_format bin)
     endif()
     target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN)
     set(dialog_resource "${experimental_dir}/PicoClicker-ExperimentalDialog.res")
-    set(dialog_template "${experimental_dir}/PicoClicker-ExperimentalDialog.${dialog_format}")
+    set(dialog_template "${experimental_dir}/PicoClicker-ExperimentalDialog.inc")
     set(dialog_extractor "${CMAKE_CURRENT_SOURCE_DIR}/scripts/extract-dialog.ps1")
     add_custom_command(
         OUTPUT "${dialog_template}"
@@ -198,7 +195,7 @@ if(TARGET PicoClickerExperimentalImage)
         COMMAND "${CMAKE_RC_COMPILER}" /nologo /dPICOCLICKER_LITE /dPICOCLICKER_ASCII /dPICOCLICKER_DIALOG_ONLY
             /fo "${dialog_resource}" "${CMAKE_CURRENT_SOURCE_DIR}/src/clicker.rc"
         COMMAND "${PICOCLICKER_POWERSHELL}" -NoProfile -NonInteractive -File "${dialog_extractor}"
-            -Resource "${dialog_resource}" -OutputFile "${dialog_template}" ${dialog_options}
+            -Resource "${dialog_resource}" -OutputFile "${dialog_template}" -EncodeWords
         DEPENDS "${dialog_extractor}" src/clicker.rc src/resource.h
         VERBATIM
     )

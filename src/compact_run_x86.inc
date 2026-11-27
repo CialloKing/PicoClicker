@@ -43,20 +43,7 @@
     lea edx, [ebp + .Ldialog_template@IMGREL]
     lea esi, [ebp + .Ldialog_encoding@IMGREL]
     mov edi, edx
-    // The encoder sizes the DWORD-aligned buffer and stream from the same RC template.
-    mov ecx, .Ldialog_words
-    cld
-.Ldecode_dialog:
-    xor eax, eax
-    lodsb
-    cmp al, 254
-    jb .Lstore_word
-    cbw                            // The 255 token becomes the template word 0xffff.
-    jne .Lstore_word
-    lodsw
-.Lstore_word:
-    stosw
-    loop .Ldecode_dialog
+    decode_dialog
     lea eax, [ebp + "_DialogProc@16"@IMGREL]
     push 0
     push eax

@@ -31,14 +31,28 @@ if (!$EncodeWords) {
     return
 }
 
-# Most words are small control fields, zeroes or ASCII characters in UTF-16.
-# Byte 255 represents 0xffff; byte 254 introduces a literal little-endian word.
+$labels = [ordered]@{ '.Ltitle' = 'PicoClicker'; '.Lstart' = 'Start' }
+$templateText = [Text.Encoding]::Unicode.GetString($bytes, $start, $size)
+$terminators = [Collections.Generic.HashSet[int]]::new()
+foreach ($literal in $labels.Values) {
+    $position = $templateText.IndexOf($literal + [char]0, [StringComparison]::Ordinal)
+    if ($position -ge 0) {
+        # Keep the NUL byte of each shared ANSI string in the encoded stream.
+        [void]$terminators.Add($start + 2 * ($position + $literal.Length))
+    }
+}
+
+# 253 encodes two zero words, 254 introduces a literal word, and 255 encodes 0xffff.
 $encoded = [Collections.Generic.List[byte]]::new()
 for ($offset = $start; $offset -lt $end; $offset += 2) {
     $word = [BitConverter]::ToUInt16($bytes, $offset)
-    if ($word -eq 0xffff) {
+    if ($word -eq 0 -and $offset + 2 -lt $end -and [BitConverter]::ToUInt16($bytes, $offset + 2) -eq 0 -and
+        !$terminators.Contains($offset) -and !$terminators.Contains($offset + 2)) {
+        $encoded.Add(253)
+        $offset += 2
+    } elseif ($word -eq 0xffff) {
         $encoded.Add(255)
-    } elseif ($word -ge 254) {
+    } elseif ($word -ge 253) {
         $encoded.Add(254)
         $encoded.Add($bytes[$offset])
         $encoded.Add($bytes[$offset + 1])
@@ -57,7 +71,6 @@ for ($offset = 0; $offset -lt $encoded.Count; $offset += 16) {
 # The runtime uses these strings as ANSI text. Alias an exact NUL-terminated
 # match in the encoded template, or emit a copy if the dialog text changes.
 $encoding = [Text.Encoding]::GetEncoding(28591).GetString($encoded.ToArray())
-$labels = [ordered]@{ '.Ltitle' = 'PicoClicker'; '.Lstart' = 'Start' }
 foreach ($entry in $labels.GetEnumerator()) {
     $literal = $entry.Value
     $position = $encoding.IndexOf($literal + [char]0, [StringComparison]::Ordinal)

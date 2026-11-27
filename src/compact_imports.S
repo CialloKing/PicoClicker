@@ -146,6 +146,12 @@ __imp_\name:
 .Ldecode_dialog\@:
     xor eax, eax
     lodsb
+    cmp al, 253
+    jne .Ldecode_word\@
+    xor eax, eax                   // Emit the first of two consecutive zero words.
+    stosw
+    dec ecx
+.Ldecode_word\@:
     cmp al, 254
     jb .Lstore_word\@
     cbw                            // 255 encodes the template word 0xffff.

@@ -5,10 +5,6 @@ if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "PicoClicker requires the Windows SDK and an MSVC-compatible compiler.")
 endif()
 
-set(clicker_sources
-    src/clicker.c
-    src/clicker.rc
-)
 set_property(SOURCE src/clicker.rc APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/clicker.manifest")
 set(compile_options /W4 /WX /utf-8 /GS /guard:cf)
 set(link_options)
@@ -65,7 +61,8 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
     list(APPEND link_options /SAFESEH)
 endif()
 
-# The resource embeds the manifest. Link only the CRT support reached from the custom entry.
+# The standard editions supply their own manifest resource. Link only the CRT support
+# reached from the custom entry.
 list(APPEND link_options
     /MANIFEST:NO /ENTRY:PicoClickerEntry /NODEFAULTLIB
     /OPT:REF /OPT:ICF /INCREMENTAL:NO
@@ -91,7 +88,7 @@ endif()
 set(clicker_targets PicoClicker ${lite_targets})
 
 foreach(clicker IN LISTS clicker_targets)
-    add_executable(${clicker} WIN32 ${clicker_sources})
+    add_executable(${clicker} WIN32 src/clicker.c)
     set_target_properties(${clicker} PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED YES
@@ -102,6 +99,7 @@ foreach(clicker IN LISTS clicker_targets)
     if(clicker STREQUAL "PicoClickerExperimentalImage")
         target_compile_definitions(${clicker} PRIVATE PICOCLICKER_ASCII)
     else()
+        target_sources(${clicker} PRIVATE src/clicker.rc)
         target_compile_definitions(${clicker} PRIVATE UNICODE _UNICODE)
         target_link_libraries(${clicker} PRIVATE kernel32 user32)
     endif()
@@ -126,9 +124,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
         foreach(clicker IN LISTS clicker_targets)
             target_sources(${clicker} PRIVATE src/compact_load_config.c)
         endforeach()
-        foreach(clicker IN LISTS lite_targets)
-            target_link_options(${clicker} PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
-        endforeach()
+        target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
         # In the full dialog, branching directly and loading imports at the call sites
         # saves registers and shortens the message loop. LLVM's private flags can vary by version.
@@ -141,19 +137,15 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
         # Packing checks each map for references to guard slots past the compact CFG prefix.
         foreach(clicker IN LISTS clicker_targets)
             target_sources(${clicker} PRIVATE src/compact_load_config.c)
-            target_link_options(${clicker} PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack /MAP)
+            target_link_options(${clicker} PRIVATE /MAP)
+            if(NOT clicker STREQUAL "PicoClickerExperimentalImage")
+                target_link_options(${clicker} PRIVATE /INCLUDE:PicoResourcePrefix /MERGE:.rdata=.rpack)
+            endif()
         endforeach()
         target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
     endif()
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
-        foreach(clicker IN LISTS lite_targets)
-            if(clicker STREQUAL "PicoClickerExperimentalImage")
-                # The experimental dialog is embedded separately; reserve only the manifest tree.
-                target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=368)
-            else()
-                target_compile_definitions(${clicker} PRIVATE PICO_RESOURCE_PREFIX=728)
-            endif()
-        endforeach()
+        target_compile_definitions(PicoClickerLite PRIVATE PICO_RESOURCE_PREFIX=728)
     endif()
 endif()
 
@@ -198,7 +190,7 @@ if(TARGET PicoClickerExperimentalImage)
                 "$<$<COMPILE_LANGUAGE:C>:SHELL:${experimental_licm_flag}>")
         endif()
     endif()
-    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN PICOCLICKER_EMBED_DIALOG)
+    target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN)
     set(dialog_resource "${experimental_dir}/PicoClicker-ExperimentalDialog.res")
     set(dialog_template "${experimental_dir}/PicoClicker-ExperimentalDialog.bin")
     set(dialog_extractor "${CMAKE_CURRENT_SOURCE_DIR}/scripts/extract-dialog.ps1")

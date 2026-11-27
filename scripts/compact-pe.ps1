@@ -59,15 +59,18 @@ function Get-ResourceLeaves($section) {
     $nodes
 }
 
-# Only the unsigned five-section layout produced by the release linker is eligible.
+# Accept the unsigned release layout and the experimental layout without resources.
 $pe = 64
 $optional = $pe + 24
 if ($image.Length -lt 512 -or (Read-U16 0) -ne 0x5A4D -or
     (Read-U32 60) -ne $pe -or (Read-U32 $pe) -ne 0x4550 -or
-    (Read-U16 ($pe + 6)) -ne 5 -or (Read-U32 ($pe + 12)) -ne 0 -or
+    (Read-U32 ($pe + 12)) -ne 0 -or
     (Read-U32 ($pe + 16)) -ne 0 -or (Read-U32 ($optional + 64)) -ne 0) {
     return
 }
+$sectionCount = Read-U16 ($pe + 6)
+if ($sectionCount -ne 5 -and (!$AllowResourceGrowth -or $sectionCount -ne 4)) { return }
+$hasResources = $sectionCount -eq 5
 
 $machine = Read-U16 ($pe + 4)
 $optionalSize = Read-U16 ($pe + 20)
@@ -80,7 +83,7 @@ if (($machine -ne 0x14C -or $magic -ne 0x10B -or $optionalSize -ne 224) -and
 $table = $optional + $optionalSize
 $directories = $table - 128
 $headers = Read-U32 ($optional + 60)
-if ($headers -notin 512, 1024 -or $table + 200 -gt $headers -or $headers -gt $image.Length -or
+if ($headers -notin 512, 1024 -or $table + 40 * $sectionCount -gt $headers -or $headers -gt $image.Length -or
     (Read-U32 ($optional + 32)) -ne 4096 -or (Read-U32 ($optional + 36)) -ne 512 -or
     (Read-U32 ($directories - 4)) -ne 16) {
     return
@@ -93,7 +96,7 @@ foreach ($directory in 4, 6) {
     }
 }
 
-$sections = for ($index = 0; $index -lt 5; $index++) {
+$sections = for ($index = 0; $index -lt $sectionCount; $index++) {
     $start = $table + 40 * $index
     [pscustomobject]@{
         Header = $start
@@ -111,7 +114,7 @@ $sections = for ($index = 0; $index -lt 5; $index++) {
 
 $layout = $sections.Name -join ','
 $packResources = $layout -ceq '.text,.data,.rpack,.rsrc,.reloc'
-if (!$packResources -and $layout -cne '.text,.rdata,.data,.rsrc,.reloc') {
+if (!$packResources -and $layout -cnotin '.text,.rdata,.data,.rsrc,.reloc', '.text,.rdata,.data,.reloc') {
     return
 }
 
@@ -130,14 +133,15 @@ foreach ($section in $sections) {
 if ($rawEnd -ne $image.Length -or (Read-U32 ($optional + 56)) -ne $virtualEnd) { return }
 
 $constants = if ($packResources) { $sections[2] } else { $sections[1] }
-$resources = $sections[3]
-$relocations = $sections[4]
-$keptCount = if ($packResources) { 3 } else { 4 }
+$resources = if ($hasResources) { $sections[3] }
+$relocations = $sections[-1]
+$keptCount = if ($packResources) { 3 } else { $sectionCount - 1 }
 $removed = $sections[$keptCount]
 $resourceDirectory = $directories + 2 * 8
 $relocDirectory = $directories + 5 * 8
 $initialized = Read-U32 ($optional + 8)
-if ($constants.Flags -ne 0x40000040 -or $resources.Flags -ne 0x40000040 -or
+if ($constants.Flags -ne 0x40000040 -or ($hasResources -and $resources.Flags -ne 0x40000040) -or
+    (!$hasResources -and ((Read-U32 $resourceDirectory) -bor (Read-U32 ($resourceDirectory + 4)))) -or
     $relocations.Flags -ne 0x42000040 -or $relocations.RawSize -ne 512 -or
     $initialized -lt $rawEnd - $removed.RawOffset -or
     $relocations.RVA -ne (Read-U32 $relocDirectory) -or
@@ -169,7 +173,8 @@ $tableOffset = [int]([Math]::Ceiling($constants.Size / 4.0) * 4)
 $tableEnd = $tableOffset + $relocations.Size
 $growth = 0
 if ($tableEnd -gt $constants.RawSize) {
-    if (!$AllowResourceGrowth -or !$packResources -or $tableEnd -gt $removed.RVA - $constants.RVA) { return }
+    if (!$AllowResourceGrowth -or ($hasResources -and !$packResources) -or
+        $tableEnd -gt $removed.RVA - $constants.RVA) { return }
     $growth = [int]([Math]::Ceiling($tableEnd / 512.0) * 512) - $constants.RawSize
 }
 

@@ -29,7 +29,7 @@ try {
     if ([BitConverter]::ToUInt16($image, $pe + 6) -ne 3 -or $headers -ne 512 -or
         [BitConverter]::ToUInt32($image, $directories - 4) -ne 16 -or
         [BitConverter]::ToUInt32($image, $optional + 36) -ne 512 -or $table + 120 -gt $headers) {
-        throw 'Expected the compact three-section Lite PE.'
+        throw 'Expected a compact three-section experimental PE.'
     }
 
     $sections = for ($index = 0; $index -lt 3; $index++) {
@@ -43,35 +43,40 @@ try {
             Offset = [BitConverter]::ToUInt32($image, $header + 20)
         }
     }
-    $text, $data, $resources = $sections
-    if (($sections.Name -join ',') -cne '.text,.data,.rsrc' -or $data.RawSize -or
-        !$text.Size -or $text.Size -gt $text.RawSize -or !$resources.Size -or $resources.Size -gt $resources.RawSize -or
-        $text.Offset -ne $headers -or $resources.Offset -ne $text.Offset + $text.RawSize -or
-        $resources.Offset + $resources.RawSize -ne $image.Length) {
-        throw 'Unexpected on-disk layout in the compact Lite PE.'
+    if (($sections.Name -join ',') -cnotin '.text,.rdata,.data', '.text,.data,.rsrc') {
+        throw 'Unexpected sections in the compact experimental PE.'
+    }
+    $text = $sections[0]
+    $data = $sections | Where-Object Name -ceq '.data'
+    $readOnly = $sections | Where-Object Name -cin '.rdata', '.rsrc'
+    if ($data.RawSize -or !$text.Size -or $text.Size -gt $text.RawSize -or
+        !$readOnly.Size -or $readOnly.Size -gt $readOnly.RawSize -or
+        $text.Offset -ne $headers -or $readOnly.Offset -ne $text.Offset + $text.RawSize -or
+        $readOnly.Offset + $readOnly.RawSize -ne $image.Length) {
+        throw 'Unexpected on-disk layout in the compact experimental PE.'
     }
 
     # Base relocations have no references from application code. Compare keeping
-    # them at the resource tail, moving them into .text padding or using the headers.
+    # them at the read-only section's tail, using .text padding or using the headers.
     $reloc = $directories + 5 * 8
     $relocRva = [BitConverter]::ToUInt32($image, $reloc)
     $relocSize = [BitConverter]::ToUInt32($image, $reloc + 4)
     $copyStart = [int]([Math]::Ceiling($text.Size / 4.0) * 4)
     $codeEnd = $copyStart + $relocSize
     $initialized = [BitConverter]::ToUInt32($image, $optional + 8)
-    if ($relocSize -and $relocRva -gt $resources.Rva -and
-        $relocRva + $relocSize -eq $resources.Rva + $resources.Size) {
-        $resourceEnd = $relocRva - $resources.Rva
-        $resourceRawSize = [int]([Math]::Ceiling($resourceEnd / 512.0) * 512)
-        $bestSize = [Math]::Min($text.RawSize + $resources.Size, $resources.RawSize + $text.Size)
+    if ($relocSize -and $relocRva -gt $readOnly.Rva -and
+        $relocRva + $relocSize -eq $readOnly.Rva + $readOnly.Size) {
+        $readOnlyEnd = $relocRva - $readOnly.Rva
+        $readOnlyRawSize = [int]([Math]::Ceiling($readOnlyEnd / 512.0) * 512)
+        $bestSize = [Math]::Min($text.RawSize + $readOnly.Size, $readOnly.RawSize + $text.Size)
         $placement = $null
-        $inCode = [Math]::Min($text.RawSize + $resourceEnd, $resourceRawSize + $codeEnd)
+        $inCode = [Math]::Min($text.RawSize + $readOnlyEnd, $readOnlyRawSize + $codeEnd)
         if ($codeEnd -le $text.RawSize -and $inCode -lt $bestSize) {
             $placement = 'code'
             $bestSize = $inCode
         }
 
-        $inHeaders = [Math]::Min($text.RawSize + $resourceEnd, $resourceRawSize + $text.Size)
+        $inHeaders = [Math]::Min($text.RawSize + $readOnlyEnd, $readOnlyRawSize + $text.Size)
         $directoryCount = 16
         $newTable = $table
         if ($inHeaders -lt $bestSize) {
@@ -96,7 +101,7 @@ try {
                 }
             }
 
-            $sourceOffset = $resources.Offset + $resourceEnd
+            $sourceOffset = $readOnly.Offset + $readOnlyEnd
             if ($placement -ceq 'headers') {
                 $headerEnd = $newTable + 120
                 [Array]::Copy($image, $table, $image, $newTable, 120)
@@ -113,17 +118,17 @@ try {
                 $text.Size = $codeEnd
             }
             [Array]::Copy($image, $sourceOffset, $image, $destinationOffset, $relocSize)
-            [Array]::Clear($image, $sourceOffset, $resources.RawSize - $resourceEnd)
+            [Array]::Clear($image, $sourceOffset, $readOnly.RawSize - $readOnlyEnd)
             Write-U32 $image $reloc $destinationRva
-            $resources.Size = $resourceEnd
-            $initialized -= $resources.RawSize - $resourceRawSize
-            $resources.RawSize = $resourceRawSize
+            $readOnly.Size = $readOnlyEnd
+            $initialized -= $readOnly.RawSize - $readOnlyRawSize
+            $readOnly.RawSize = $readOnlyRawSize
         }
     }
 
     # Keep the RVAs and permissions. Put the section with more padding last so only
     # its raw size may end between file-alignment boundaries.
-    $first, $last = @($text, $resources) | Sort-Object { $_.RawSize - $_.Size }, Offset
+    $first, $last = @($text, $readOnly) | Sort-Object { $_.RawSize - $_.Size }, Offset
     $padding = $last.RawSize - $last.Size
     $lastOffset = $headers + $first.RawSize
     [byte[]] $output = [byte[]]::new($lastOffset + $last.Size)
@@ -135,7 +140,7 @@ try {
     Write-U32 $output ($first.Header + 16) $first.RawSize
     Write-U32 $output ($last.Header + 16) $last.Size
     Write-U32 $output ($text.Header + 8) $text.Size
-    Write-U32 $output ($resources.Header + 8) $resources.Size
+    Write-U32 $output ($readOnly.Header + 8) $readOnly.Size
     if ($last.Name -ceq '.text') {
         Write-U32 $output ($optional + 4) ($text.RawSize - $padding)
     } else {

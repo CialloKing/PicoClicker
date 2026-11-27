@@ -96,15 +96,13 @@ try {
                 throw "$($executable.Name) links guard slots outside its compact load config."
             }
         }
-        if ($pe -notmatch 'Type: MANIFEST \(ID 24\)') {
-            throw "Missing manifest resource in $($executable.Name)."
-        }
         if ($experimental) {
-            if ($pe -notmatch 'Symbol: CreateDialogIndirectParamA\b' -or $pe -match 'Type: DIALOG \(ID 5\)') {
-                throw "$($executable.Name) does not use an embedded dialog template."
+            if ($pe -notmatch 'Symbol: CreateDialogIndirectParamA\b' -or
+                $pe -notmatch 'ResourceTableRVA: 0x0\b' -or $pe -notmatch 'ResourceTableSize: 0x0\b') {
+                throw "$($executable.Name) needs an embedded dialog template and an empty resource directory."
             }
-        } elseif ($pe -notmatch 'Type: DIALOG \(ID 5\)') {
-            throw "Missing dialog resource in $($executable.Name)."
+        } elseif ($pe -notmatch 'Type: DIALOG \(ID 5\)' -or $pe -notmatch 'Type: MANIFEST \(ID 24\)') {
+            throw "Missing dialog or manifest resource in $($executable.Name)."
         }
 
         [pscustomobject]@{
@@ -153,6 +151,7 @@ try {
     }
     $notes += @('', '各 EXE 均直接导入 Kernel32.dll 和 User32.dll，并保留 ASLR、DEP、CFG 和栈保护。')
     if ($IncludeExperimental) {
+        $notes += @('', 'Experimental 启动时不主动请求提升权限。需要向高权限窗口发送点击时，可以手动以管理员身份运行。')
         $notes += @('', '文件名带 Experimental 的构建采用实验性 PE 布局。需要兼容常规 PE 工具或其他 Windows 版本时，请选用普通版或 Lite。')
     }
     if ($report) {

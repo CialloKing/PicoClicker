@@ -77,7 +77,6 @@ __imp_\name:
 .Luser_iat:
     import DestroyWindow, 4
     import DispatchMessageA, 4
-    import EnableWindow, 8
     import GetAncestor, 8
     import GetCursorPos, 4
     import GetDlgItem, 8
@@ -90,6 +89,8 @@ __imp_\name:
     import SendDlgItemMessageA, 20
     import SendInput, 12
     import SetProcessDpiAwarenessContext, 4
+    // PE32 has room for one more name after its relocations fit in .text.
+    import EnableWindow, 8
     import TranslateMessage, 4
     // Together with the DLL names, these trailing names fill the PE header space.
     import CreateDialogIndirectParamA, 20

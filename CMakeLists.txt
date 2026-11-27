@@ -126,5 +126,28 @@ endif()
 target_compile_definitions(PicoClickerLite PRIVATE PICOCLICKER_LITE)
 set_target_properties(PicoClickerLite PROPERTIES OUTPUT_NAME PicoClicker-Lite)
 
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
+    CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
+    find_program(PICOCLICKER_POWERSHELL NAMES pwsh powershell)
+    if(PICOCLICKER_POWERSHELL)
+        get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        set(experimental_dir "${CMAKE_CURRENT_BINARY_DIR}")
+        if(multi_config)
+            string(APPEND experimental_dir "/$<CONFIG>")
+        endif()
+        set(experimental_exe "${experimental_dir}/PicoClicker-Experimental.exe")
+        set(experimental_packer "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-experimental-pe.ps1")
+        add_custom_command(
+            OUTPUT "${experimental_exe}"
+            COMMAND "${PICOCLICKER_POWERSHELL}" -NoProfile -NonInteractive -File "${experimental_packer}"
+                -Executable "$<TARGET_FILE:PicoClickerLite>" -OutputFile "${experimental_exe}"
+            DEPENDS PicoClickerLite "${experimental_packer}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/compact-pe.ps1"
+            COMMENT "Packing the experimental PicoClicker PE"
+            VERBATIM
+        )
+        add_custom_target(PicoClickerExperimental DEPENDS "${experimental_exe}")
+    endif()
+endif()
+
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/release-info.txt"
     CONTENT "${PROJECT_VERSION}\n${toolchain}\n")

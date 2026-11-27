@@ -46,14 +46,10 @@
     mov al, 1
 .Ldialog_enter:
     // Win32 can invoke the callback without Run's register state. Establish a fresh context.
-    push ebp
-    push ebx
-    push esi
-    push edi
-    mov esi, dword ptr [esp + 20]
-    mov ebp, offset ___ImageBase
-    lea ebx, [ebp + .Lkernel_iat@IMGREL]
-    lea edi, [ebp + _picoRunData@IMGREL]
+    pushad
+    mov esi, dword ptr [esp + 36]
+    mov ebx, offset .Lkernel_iat
+    mov edi, offset _picoRunData
     test al, al
     jz .Lclose
     dec al
@@ -93,14 +89,11 @@
     push esi
     call_import DestroyWindow
 .Ldialog_leave:
-    pop edi
-    pop esi
-    pop ebx
-    pop ebp
+    popad
     push 1
     pop eax
     ret 16
-// The helpers share ESI (HWND), EDI (state), EBX (IAT) and EBP (module).
+// The helpers share ESI (HWND), EDI (state) and EBX (IAT).
 .Lstop:
     test byte ptr [edi + .Lgeneration], 1
     jz .Lafter_cancel
@@ -116,11 +109,11 @@
 
 .Lshow_start:
     push edx
-    lea edx, [ebp + .Lstart@IMGREL]
+    mov edx, offset .Lstart
     jmp .Ltoggle_label
 .Lshow_stop:
     push edx
-    lea edx, [ebp + .Lstop_label@IMGREL]
+    mov edx, offset .Lstop_label
 .Ltoggle_label:
     push IDC_TOGGLE
     pop ecx
@@ -138,22 +131,11 @@
     call_import SendDlgItemMessageA
     ret
 
-.Lrun_error:
-    lea eax, [ebp + .Ltitle@IMGREL]
-    push 0x10                      // MB_ICONERROR
-    push eax
-    push edx
-    push ecx
-    call_import MessageBoxA
-    ret
-
 .Ltoggle:
     test byte ptr [edi + .Lgeneration], 1
     jz .Lread_interval
     mov edx, dword ptr [edi + .Lidle_status]
     jmp .Lstop
-.Lrestore_bad_interval:
-    pop edi
 .Lbad_interval:
     load_iat_text .Linterval
     jmp .Ltoggle_status
@@ -175,18 +157,16 @@
     ja .Lbad_interval
     lea ecx, [eax + 1]
     xor eax, eax
-    push edi
-    lea edi, [esp + 4]
+    mov ebp, esp
 .Ldigit:
-    movzx edx, byte ptr [edi]
+    movzx edx, byte ptr [ebp]
     sub edx, '0'
     cmp edx, 9
-    ja .Lrestore_bad_interval
+    ja .Lbad_interval
     imul eax, eax, 10
     add eax, edx
-    inc edi
+    inc ebp
     loop .Ldigit                   // ECX is the validated character count.
-    pop edi
     dec eax                        // One unsigned range check rejects both zero and values over 60000.
     cmp eax, 59999
     ja .Lbad_interval
@@ -206,8 +186,8 @@
     mov ecx, dword ptr [esp]
     imul eax, ecx, -10000          // A negative due time is relative.
     cdq
-    mov dword ptr [esp], eax
-    mov dword ptr [esp + 4], edx
+    push edx
+    push eax
     mov edx, esp
     xor eax, eax
     push eax
@@ -217,6 +197,7 @@
     push edx
     push dword ptr [edi + .Ltimer]
     call_import SetWaitableTimer
+    add esp, 8
     test eax, eax
     jz .Ltimer_failed
 

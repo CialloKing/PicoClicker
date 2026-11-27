@@ -37,8 +37,8 @@
 .Linitialize:
     push -4                        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
     call_import SetProcessDpiAwarenessContext
-    sub esp, 44
-    // Timer generation and drain counter, then MSG, the /GS cookie and HWND.
+    sub esp, 40
+    // Timer generation and drain counter, then MSG and the /GS cookie.
     xor esi, esp
     mov dword ptr [esp + 36], esi
     lea edx, [ebp + .Ldialog_template@IMGREL]
@@ -55,9 +55,9 @@
     mov esi, eax
     test eax, eax
     jz .Lui_failed
-    mov dword ptr [esp + 40], esi
-    lea esi, [esp + 8]
-    lea edi, [ebp + _picoRunData@IMGREL]
+    // After dialog creation EBP can hold MSG and leave HWND in the helper ABI.
+    lea ebp, [esp + 8]
+    mov edi, offset _picoRunData
 
 .Lwait:
     mov eax, dword ptr [edi + .Lgeneration]
@@ -84,16 +84,16 @@
     push eax
     push eax
     push eax
-    push esi
+    push ebp
     call_import PeekMessageA
     test eax, eax
     jz .Lcheck_tick
-    cmp dword ptr [esi + 4], 0x12  // WM_QUIT
+    cmp dword ptr [ebp + 4], 0x12  // WM_QUIT
     je .Lquit
     // Translate printable keys for the edit control without dialog navigation.
-    push esi
+    push ebp
     call_import TranslateMessage
-    push esi
+    push ebp
     call_import DispatchMessageA
     dec byte ptr [esp + 4]
     jnz .Lpeek
@@ -110,18 +110,18 @@
 
 .Lclick:
     // The message queue is drained. Reuse its buffer for the POINT passed to Win32.
-    push esi
+    push ebp
     call_import GetCursorPos
     test eax, eax
     jz .Lagain
-    push dword ptr [esi + 4]
-    push dword ptr [esi]
+    push dword ptr [ebp + 4]
+    push dword ptr [ebp]
     call_import WindowFromPoint
     push 2                         // GA_ROOT
     push eax
     call_import GetAncestor
     // A press over the clicker's own window must not toggle its controls.
-    cmp eax, dword ptr [esp + 40]
+    cmp eax, esi
     je .Lagain
     lea eax, [edi + .Lclick_pair]
     push .Linput_size
@@ -139,15 +139,11 @@
     push 1
     call_import SendInput
 .Lclick_failed:
-    push esi
-    mov esi, dword ptr [esp + 44]  // The dialog helpers expect HWND in ESI.
     load_iat_text .Lclick_error
     call .Lstop
-    pop esi
     jmp .Lagain
 
 .Lwait_failed:
-    mov esi, dword ptr [esp + 40]
     xor edx, edx
     call .Lstop
     load_iat_text .Ltimer_error
@@ -155,18 +151,17 @@
 .Lui_failed:
     load_iat_text .Lui_error
 .Lshow_error:
-    mov ecx, esi
-    call .Lrun_error
-    test esi, esi                  // Dialog creation can fail before there is a window.
-    jz .Lfailed
+    mov eax, offset .Ltitle
+    push 0x10                      // MB_ICONERROR
+    push eax
+    push edx
     push esi
-    call_import DestroyWindow
-.Lfailed:
+    call_import MessageBoxA        // ExitProcess releases the dialog after the error.
     push 1
     pop esi
     jmp .Lreturn
 .Lquit:
-    mov esi, dword ptr [esi + 8]
+    mov esi, dword ptr [ebp + 8]
 .Lreturn:
     mov ecx, dword ptr [esp + 36]
     xor ecx, esp

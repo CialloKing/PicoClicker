@@ -4,6 +4,13 @@
 )
 
 $ErrorActionPreference = 'Stop'
+function Get-HexField([string] $dump, [string] $field) {
+    if ($dump -notmatch "(?m)^\s*${field}: 0x([0-9A-F]+)\s*$") {
+        throw "Missing PE field $field"
+    }
+    [Convert]::ToUInt64($Matches[1], 16)
+}
+
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $reader = (Get-Command llvm-readobj -CommandType Application).Source
 $machines = @{
@@ -72,8 +79,17 @@ try {
         if (($imports -join ',') -ine 'KERNEL32.dll,USER32.dll') {
             throw "Unexpected imports in $($target.Name) build ($($imports -join ', '))"
         }
-        if ($experimental -and [regex]::Matches($pe, '(?m)^\s*ImportLookupTableRVA: 0x0\s*$').Count -ne 2) {
+        $compactLite = $target.Suffix -eq '-Lite' -and $metadata[1] -like 'clang-cl * + LLD'
+        if (($experimental -or $compactLite) -and [regex]::Matches($pe, '(?m)^\s*ImportLookupTableRVA: 0x0\s*$').Count -ne 2) {
             throw "$($executable.Name) does not use the shared import table."
+        }
+        if ($compactLite) {
+            # The assembly addresses the loader-initialized cookie relative to FirstThunk.
+            $width = if ($target.Name -eq 'x64') { 8 } else { 4 }
+            $iat = (Get-HexField $pe ImageBase) + (Get-HexField $pe IATRVA)
+            if ((Get-HexField $pe SecurityCookie) + $width -ne $iat) {
+                throw "$($executable.Name) needs its stack cookie immediately before the IAT."
+            }
         }
         foreach ($field in $requiredFields) {
             if ($pe -notmatch $field) {

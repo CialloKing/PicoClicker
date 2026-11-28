@@ -60,9 +60,9 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 
 实验版由 Windows 加载器初始化栈保护 Cookie，用同一张表查找和接收导入地址。两种架构都用手写汇编处理窗口回调、等待和点击，x64 带有异常展开信息。打包会裁掉磁盘上最后一个节的填充，并可将部分导入名称和重定位表放入 PE 文件头或代码节的填充区。部分 Windows 版本或 PE 工具可能拒绝该布局。使用 LLVM 22.1.8 的 `llvm-readobj` 检查导入表和重定位时，可读取 `PicoClicker-Experimental-linked.exe`。[Microsoft PE 格式规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
 
-## 本地候选
+## v0.4.18 成品体积
 
-当前源码使用 clang-cl 22.1.8 和 LLD 生成的打包体积如下。
+下表为 v0.4.18 使用 clang-cl 22.1.8 和 LLD 生成的成品大小。[下载 v0.4.18](https://github.com/CialloKing/PicoClicker/releases/tag/v0.4.18)
 
 | 架构 | 普通版 | Lite | 实验性极简版 |
 | --- | ---: | ---: | ---: |

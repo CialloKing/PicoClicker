@@ -1,3 +1,7 @@
+#ifndef HINT_SECTION
+#define HINT_SECTION .section .idata$6,"dr"
+#endif
+
 .macro descriptor dll
     .long 0, 0, 0
     .rva .L\dll\()_name
@@ -26,7 +30,7 @@ __imp_\name:
 #endif
     // Reuse the preceding string's terminator while keeping each hint word aligned.
     // A hint may also use the preceding character. Windows checks the full name.
-    .section .idata$6,"dr"
+    HINT_SECTION
     .if (. - .Lhint_begin) % 2
         .set .Lhint_\name, . - 1
         .byte 0
@@ -44,7 +48,7 @@ __imp_\name:
 #endif
 .endm
 
-.section .idata$6,"dr"
+HINT_SECTION
 .p2align 1
 .Lhint_begin:
     .short 0

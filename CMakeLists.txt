@@ -188,6 +188,8 @@ foreach(clicker IN LISTS loader_cookie_targets)
 endforeach()
 
 if(compact_import_targets)
+    target_compile_definitions(PicoClickerLite PRIVATE PICOCLICKER_ASM_RUN)
+    target_sources(PicoClickerLite PRIVATE src/compact_lite_ui.c)
     # An omitted compact import must fail at link time.
     set(CMAKE_C_STANDARD_LIBRARIES "")
     get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -197,14 +199,20 @@ if(compact_import_targets)
     endif()
     if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
         set(import_triple i686-pc-windows-msvc)
+        set(loop_arch x86)
     else()
         set(import_triple x86_64-pc-windows-msvc)
+        set(loop_arch x64)
     endif()
+    set(loop_sources src/compact_loop.inc src/compact_run_${loop_arch}.inc src/compact_dialog_${loop_arch}.inc
+        src/compact_cookie.h src/resource.h)
     set(unicode_import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_unicode_imports.S")
     foreach(clicker IN LISTS compact_import_targets)
         set(import_define)
+        set(import_dependencies)
         if(clicker STREQUAL "PicoClickerLite")
             set(import_define /DPICOCLICKER_LITE)
+            set(import_dependencies ${loop_sources})
         endif()
         set(import_stem "${assembly_dir}/${clicker}Imports")
         add_custom_command(
@@ -213,7 +221,7 @@ if(compact_import_targets)
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${assembly_dir}"
             COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c ${import_define}
                 "/Fo${import_stem}.obj" "/Fa${import_stem}.asm" "${unicode_import_source}"
-            DEPENDS "${unicode_import_source}" src/compact_iat.inc src/compact_guard_slots.inc
+            DEPENDS "${unicode_import_source}" src/compact_iat.inc src/compact_guard_slots.inc ${import_dependencies}
             VERBATIM
         )
         target_sources(${clicker} PRIVATE "${import_stem}.obj")
@@ -227,13 +235,6 @@ if(TARGET PicoClickerExperimentalImage)
         OUTPUT_NAME PicoClicker-Experimental-linked
     )
     set(experimental_dir "${assembly_dir}")
-    if(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "X86")
-        set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x86.inc")
-        set(dialog_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_dialog_x86.inc")
-    else()
-        set(run_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_run_x64.inc")
-        set(dialog_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_dialog_x64.inc")
-    endif()
     target_compile_definitions(PicoClickerExperimentalImage PRIVATE PICOCLICKER_ASM_RUN PICOCLICKER_MIN_LOAD_CONFIG)
     target_link_options(PicoClickerExperimentalImage PRIVATE /GUARD:CF,NOLONGJMP /MAP)
     set(dialog_resource "${experimental_dir}/PicoClicker-ExperimentalDialog.res")
@@ -259,9 +260,7 @@ if(TARGET PicoClickerExperimentalImage)
         COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
             "/DPICO_DIALOG_TEMPLATE=\"${dialog_template}\""
             "/Fo${import_object}" "/Fa${experimental_dir}/PicoClicker-ExperimentalAsm.asm" "${import_source}"
-        DEPENDS "${import_source}" "${run_source}" ${dialog_source} "${dialog_template}"
-            src/compact_iat.inc src/compact_guard_slots.inc
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h" "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_cookie.h"
+        DEPENDS "${import_source}" ${loop_sources} "${dialog_template}" src/compact_iat.inc src/compact_guard_slots.inc
         VERBATIM
     )
     target_sources(PicoClickerExperimentalImage PRIVATE "${import_object}")

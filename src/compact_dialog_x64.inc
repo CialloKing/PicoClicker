@@ -26,12 +26,20 @@ DialogProc:
     mov byte ptr [rip + picoRunData + .Lclosing], 1
     jmp .Lhandled_leaf
 .Lcommand:
+#ifdef PICOCLICKER_WIDE_DIALOG
+    cmp r8d, IDC_TOGGLE              // BN_CLICKED is zero.
+    je .Ltoggle_message
+    cmp r8w, 2                     // IDCANCEL from IsDialogMessageW (Esc).
+    je .Lclosing_dialog
+    jmp .Lignored_message
+#else
     lea eax, [r8 - IDC_LEFT]
     cmp eax, IDC_TOGGLE - IDC_LEFT // BN_CLICKED is zero.
     je .Ltoggle_message
     ja .Lignored_message
     // Record the selection separately so an active click pair remains stable.
     mov byte ptr [rip + picoRunData + .Lselected_button], al
+#endif
 .Lhandled_leaf:
     xor eax, eax
     inc al
@@ -53,15 +61,15 @@ DialogProc:
     .seh_pushreg rsi
     push rdi
     .seh_pushreg rdi
-    sub rsp, 64
-    .seh_stackalloc 64
+    sub rsp, .Ldialog_stack
+    .seh_stackalloc .Ldialog_stack
     .seh_endprologue
 
     // The outgoing argument area ends at 48; the edit buffer and cookie follow it.
     lea rbx, [rip + __imp_GetAncestor]
     access_iat_cookie 0x8b, 0x43   // MOV RAX, [RBX+disp8]
     xor rax, rsp
-    mov qword ptr [rsp + 56], rax
+    mov qword ptr [rsp + 48 + .Ledit_space], rax
     mov rsi, rcx
     lea rdi, [rip + picoRunData]
 
@@ -73,17 +81,17 @@ DialogProc:
     lea edx, [rax + IDC_LEFT]
     mov r8d, 0xf1                  // BM_SETCHECK
     lea r9d, [rax + 1]             // BST_CHECKED
-    call_import SendDlgItemMessageA
+    call_import UI_API(SendDlgItemMessage)
     mov rcx, rsi
     xor edx, edx
     mov dl, ID_HOTKEY
     mov r8d, 0x4000                // MOD_NOREPEAT
     lea r9d, [rdx + 0x70 - ID_HOTKEY] // VK_F1
     call_import RegisterHotKey
-    load_iat_text .Lbusy
+    load_status_text busy
     test eax, eax
     jz .Lsave_idle
-    load_iat_text .Lf1
+    load_status_text f1
 .Lsave_idle:
     mov qword ptr [rdi + .Lidle_status], rdx
     jmp .Ltoggle_status
@@ -97,17 +105,17 @@ DialogProc:
 .Ltoggle_status:
     call .Lstatus
 .Lhandled_message:
-    mov rcx, qword ptr [rsp + 56]
+    mov rcx, qword ptr [rsp + 48 + .Ledit_space]
     xor rcx, rsp
     call .Lcheck_cookie
     lea eax, [rcx + 1]             // The Win64 cookie check returns with RCX zero.
-    add rsp, 64
+    add rsp, .Ldialog_stack
     pop rdi
     pop rsi
     pop rbx
     ret
 .Lbad_interval:
-    load_iat_text .Linterval
+    load_status_text interval
     jmp .Ltoggle_status
 .Lread_interval:
     // Each start captures the interval and button; edits only affect the next start.
@@ -117,7 +125,7 @@ DialogProc:
     mov edx, IDC_INTERVAL
     lea r8d, [rdx + 0x0d - IDC_INTERVAL]  // WM_GETTEXT
     lea r9d, [rdx + 7 - IDC_INTERVAL]     // Read an extra byte to detect truncation.
-    call_import SendDlgItemMessageA
+    call_import UI_API(SendDlgItemMessage)
     dec eax
     cmp eax, 4
     ja .Lbad_interval
@@ -125,13 +133,13 @@ DialogProc:
     lea r8, [rsp + 48]
     xor eax, eax
 .Ldigit:
-    movzx edx, byte ptr [r8]
+    movzx edx, EDIT_UNIT ptr [r8]
     sub edx, '0'
     cmp edx, 9
     ja .Lbad_interval
     imul eax, eax, 10
     add eax, edx
-    inc r8
+    NEXT_DIGIT(r8)
     loop .Ldigit                   // RCX is the validated character count.
     dec eax
     cmp eax, 59999
@@ -144,7 +152,7 @@ DialogProc:
     xor edx, edx
     lea r8d, [rdx + 2]             // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
     mov r9d, 0x100002              // SYNCHRONIZE | TIMER_MODIFY_STATE
-    call_import CreateWaitableTimerExA
+    call_import UI_API(CreateWaitableTimerEx)
     mov qword ptr [rdi + .Ltimer], rax
     mov rcx, rax
     test rax, rax
@@ -162,17 +170,22 @@ DialogProc:
     test eax, eax
     jz .Ltimer_failed
 
+#ifdef PICOCLICKER_WIDE_DIALOG
+    mov rcx, rsi
+    call PicoSelectedButton
+#else
     movzx eax, byte ptr [rdi + .Lselected_button]
     load_button_flags
+#endif
     mov dword ptr [rdi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // Each release flag follows its press flag.
     mov dword ptr [rdi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [rdi + .Lgeneration]
     call .Lshow_stop
-    load_iat_text .Lon
+    load_status_text on
     jmp .Lreport_start
 .Ltimer_failed:
-    load_iat_text .Ltimer_error
+    load_status_text timer_error
 .Lreport_start:
     jmp .Ltoggle_status
 .seh_endproc
@@ -189,6 +202,16 @@ DialogProc:
 
 // Callers know which transition occurred. The leaf helpers share their Win64
 // argument area and let the API return directly to the caller.
+#ifdef PICOCLICKER_WIDE_DIALOG
+.Lshow_start:
+    xor edx, edx
+    jmp .Ltoggle_label
+.Lshow_stop:
+    mov edx, 1
+.Ltoggle_label:
+    mov rcx, rsi
+    jmp PicoShowButton
+#else
 .Lshow_start:
     lea rdx, [rip + .Lstart]
     jmp .Ltoggle_label
@@ -198,6 +221,7 @@ DialogProc:
     mov al, IDC_TOGGLE
     jmp .Lset_text
 
+#endif
 // These leaf helpers reuse the caller's shadow space and fifth argument slot.
 .Lstatus:
     mov al, IDC_STATUS
@@ -207,6 +231,6 @@ DialogProc:
     xor r9d, r9d
     lea r8d, [r9 + 0x0c]          // WM_SETTEXT
     mov rcx, rsi
-    tail_import SendDlgItemMessageA
+    tail_import UI_API(SendDlgItemMessage)
 
 .att_syntax prefix

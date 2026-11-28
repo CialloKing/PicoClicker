@@ -1,4 +1,3 @@
-#include "compact_cookie.h"
 #include "resource.h"
 
 .if IDC_MIDDLE != IDC_LEFT + 1 || IDC_RIGHT != IDC_LEFT + 2
@@ -53,28 +52,9 @@
 .Luser_name:
     .asciz "USER32.dll"
 
-// LLVM otherwise reserves a four-byte displacement for these section-relative constants.
-// The same FF /2 encoding calls through EBX in PE32 and RBX in PE32+.
-.macro call_import name, modrm=0x53
-#ifdef __i386__
-    .set .Ldisp\@, .Liat_\name
-#else
-    .set .Ldisp\@, .Liat_\name - .Liat_GetAncestor
-#endif
-    .if .Ldisp\@ < -128 || .Ldisp\@ > 127
-        .error "Compact IAT displacement does not fit in one byte"
-    .endif
-    .if .Ldisp\@ == 0
-        // The slot at the base needs no displacement byte.
-        .byte 0xff, \modrm - 0x40
-    .else
-        .byte 0xff, \modrm, .Ldisp\@
-    .endif
-.endm
-
-.macro tail_import name
-    call_import \name, 0x63
-.endm
+#define CREATE_DIALOG_API CreateDialogIndirectParamA
+#define DIALOG_TITLE .Ltitle
+#define UI_API(x) x##A
 
 #ifdef __x86_64__
 // Moving the template lowers the .rdata floor before the import-name tail.
@@ -89,12 +69,8 @@
 // read-only data immediately before it. The packer verifies the cookie offset.
 .section .idata$4,"dr"
 #ifdef __i386__
-.set .Lcookie_width, 4
-.set .Liat_base_offset, 0
 .p2align 2
 #else
-.set .Lcookie_width, 8
-.set .Liat_base_offset, .Liat_GetAncestor
 .p2align 3
 #endif
 .Liat_text_begin:
@@ -104,39 +80,24 @@
 .Lbusy:        .asciz "F1 Busy"
 .Lf1:          .asciz "F1"
 .Lon:          .asciz "On"
+.Lwait_error:
 .Ltimer_error: .asciz "Timer Err"
 
 // Both callbacks index these flags from their IAT base; the cookie stays aligned.
 .Lbutton_flags:
     .byte 2, 32, 8                 // MOUSEEVENTF_*DOWN in control ID order.
-.set .Liat_text_size, (. - .Liat_text_begin + .Lcookie_width - 1) & -.Lcookie_width
-#ifdef __i386__
-.p2align 2
-.globl ___security_cookie
-___security_cookie:
-    .long INITIAL_COOKIE
-#else
-.p2align 3
-.globl __security_cookie
-__security_cookie:
-    .quad INITIAL_COOKIE
-#endif
-.set .Lcookie_disp, -.Lcookie_width - .Liat_base_offset
-.if .Lcookie_disp < -128
-    .error "The stack cookie must be within 128 bytes before the IAT base"
-.endif
-.set .Lbutton_disp, .Lbutton_flags - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
-.if .Lbutton_disp < -128
-    .error "Mouse button flags must be within 128 bytes before the IAT"
-.endif
-
+.set .Liat_text_size, (. - .Liat_text_begin + __SIZEOF_POINTER__ - 1) & -__SIZEOF_POINTER__
 .macro load_button_flags
+    .set .Lbutton_disp, .Lbutton_flags - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
+    .if .Lbutton_disp < -128
+        .error "Mouse button flags must be within 128 bytes before the IAT"
+    .endif
     // MOVZX EAX,[(E/R)BX+(E/R)AX+disp8]. LLVM reserves disp32 for the label difference.
     .byte 0x0f, 0xb6, 0x44, 0x03, .Lbutton_disp
 .endm
 
-.macro load_iat_text name
-    .set .Ltext_disp\@, \name - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
+.macro load_status_text name
+    .set .Ltext_disp\@, .L\name - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
     .if .Ltext_disp\@ < -128 || .Ltext_disp\@ >= 0
         .error "Read-only text must be within 128 bytes before the IAT base"
     .endif
@@ -146,13 +107,6 @@ __security_cookie:
 #endif
     .byte 0x8d, 0x53, .Ltext_disp\@
 .endm
-
-#ifdef __x86_64__
-.macro access_iat_cookie opcode, modrm
-    // The x64 IAT base comes from a label difference, so force the checked disp8.
-    .byte 0x48, \opcode, \modrm, .Lcookie_disp
-.endm
-#endif
 
 .bss
 .p2align 2
@@ -187,39 +141,4 @@ __security_cookie:
     loop .Ldecode_dialog\@
 .endm
 
-#ifdef __i386__
-#include "compact_run_x86.inc"
-#else
-#include "compact_run_x64.inc"
-#endif
-
-// The entry ends at ExitProcess. Use the padding before the CFG-aligned callback.
-.Lstop_label:  .asciz "Stop"
-
-#ifdef __i386__
-#include "compact_dialog_x86.inc"
-#else
-#include "compact_dialog_x64.inc"
-#endif
-
-.intel_syntax noprefix
-.text
-// Both assembly frames check their decoded stack cookie before returning or exiting.
-// A mismatch still terminates through Windows FAST_FAIL_STACK_COOKIE_CHECK.
-.Lcheck_cookie:
-#ifdef __i386__
-    cmp ecx, dword ptr [ebx + .Lcookie_disp]
-#else
-    access_iat_cookie 0x3b, 0x4b   // CMP RCX, [RBX+disp8]
-    jne .Lcookie_failed
-    shr rcx, 48                    // Return with RCX zero for a valid Win64 cookie.
-#endif
-    jne .Lcookie_failed
-.Lguard_check_fallback:
-    ret
-.Lcookie_failed:
-    mov ecx, 2                     // FAST_FAIL_STACK_COOKIE_CHECK
-    int 0x29
-    int3
-
-#include "compact_guard_slots.inc"
+#include "compact_loop.inc"

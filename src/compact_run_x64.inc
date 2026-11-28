@@ -56,17 +56,21 @@ PicoClickerEntry:
     mov qword ptr [rsp + 96], rsi
     mov rcx, -4                    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is pointer-sized.
     call_import SetProcessDpiAwarenessContext
+#ifdef PICOCLICKER_WIDE_DIALOG
+    lea rcx, [rip + __ImageBase]
+    mov edx, IDD_MAIN
+#else
     lea rdx, [rip + .Ldialog_template]
     lea rsi, [rip + .Ldialog_encoding]
     mov rdi, rdx
-    decode_dialog
+    decode_dialog                  // Leaves RCX zero to select the current module.
+#endif
     lea rdi, [rip + picoRunData]
     lea rbp, [rsp + 48]
-    // The decoder leaves RCX zero, selecting the current module for this dialog.
     xor r8d, r8d
     lea r9, [rip + DialogProc]
     mov qword ptr [rsp + 32], r8
-    call_import CreateDialogIndirectParamA
+    call_import CREATE_DIALOG_API
     mov rsi, rax
     test rax, rax
     jz .Lui_failed
@@ -94,16 +98,23 @@ PicoClickerEntry:
     xor r9d, r9d
     lea eax, [rdx + 1]             // PM_REMOVE
     mov dword ptr [rsp + 32], eax
-    call_import PeekMessageA
+    call_import UI_API(PeekMessage)
     test eax, eax
     jz .Lcheck_tick
     cmp dword ptr [rbp + 8], 0x12  // WM_QUIT
     je .Lquit
-    // Translate printable keys for the edit control without dialog navigation.
+#ifdef PICOCLICKER_WIDE_DIALOG
+    mov rcx, rsi
+    mov rdx, rbp
+    call_import IsDialogMessageW
+    test eax, eax
+    jnz .Lnext_message
+#endif
     mov rcx, rbp
     call_import TranslateMessage
     mov rcx, rbp
-    call_import DispatchMessageA
+    call_import UI_API(DispatchMessage)
+.Lnext_message:
     dec byte ptr [rsp + 40]
     jnz .Lpeek
 
@@ -149,22 +160,22 @@ PicoClickerEntry:
 .Lclick_failed:
     call .Lcancel_timer
     call .Lshow_start
-    load_iat_text .Lclick_error
+    load_status_text click_error
     call .Lstatus
     jmp .Lagain
 
 .Lwait_failed:
     call .Lcancel_timer
-    load_iat_text .Ltimer_error
+    load_status_text wait_error
     jmp .Lshow_error
 .Lui_failed:
-    load_iat_text .Lui_error
+    load_status_text ui_error
 .Lshow_error:
     mov rcx, rsi
-    lea r8, [rip + .Ltitle]
+    lea r8, [rip + DIALOG_TITLE]
     xor r9d, r9d
     mov r9b, 0x10                  // MB_ICONERROR
-    call_import MessageBoxA
+    call_import UI_API(MessageBox)
     xor esi, esi
     inc esi
     jmp .Lreturn

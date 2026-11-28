@@ -29,12 +29,20 @@
     jmp .Lhandled
 .Lcommand:
     mov eax, dword ptr [esp + 12]
+#ifdef PICOCLICKER_WIDE_DIALOG
+    cmp eax, IDC_TOGGLE              // BN_CLICKED is zero.
+    je .Ltoggle_message
+    cmp ax, 2                      // IDCANCEL from IsDialogMessageW (Esc).
+    je .Lclosing_dialog
+    jmp .Lignored
+#else
     sub eax, IDC_LEFT
     cmp eax, IDC_TOGGLE - IDC_LEFT  // BN_CLICKED is zero.
     je .Ltoggle_message
     ja .Lignored
     // The active click pair continues to use the selection captured at start.
     mov byte ptr [_picoRunData + .Lselected_button], al
+#endif
 .Lhandled:
     push 1
     pop eax
@@ -60,16 +68,16 @@
     push 0xf1                      // BM_SETCHECK
     push IDC_LEFT
     push esi
-    call_import SendDlgItemMessageA
+    call_import UI_API(SendDlgItemMessage)
     push 0x70                      // VK_F1
     push 0x4000                    // MOD_NOREPEAT
     push ID_HOTKEY
     push esi
     call_import RegisterHotKey
-    load_iat_text .Lbusy
+    load_status_text busy
     test eax, eax
     jz .Lsave_idle
-    load_iat_text .Lf1
+    load_status_text f1
 .Lsave_idle:
     mov dword ptr [edi + .Lidle_status], edx
     call .Lstatus
@@ -93,6 +101,20 @@
     jne .Lshow_start
     ret
 
+#ifdef PICOCLICKER_WIDE_DIALOG
+.Lshow_start:
+    xor eax, eax
+    jmp .Ltoggle_label
+.Lshow_stop:
+    push 1
+    pop eax
+.Ltoggle_label:
+    push edx
+    push eax
+    push esi
+    call "_PicoShowButton@8"
+    pop edx
+#else
 .Lshow_start:
     push edx
     mov edx, offset .Lstart
@@ -105,6 +127,7 @@
     pop ecx
     call .Lset_text
     pop edx
+#endif
 .Lstatus:
     push IDC_STATUS
     pop ecx
@@ -114,7 +137,7 @@
     push 0x0c                      // WM_SETTEXT
     push ecx
     push esi
-    call_import SendDlgItemMessageA
+    call_import UI_API(SendDlgItemMessage)
     ret
 
 .Ltoggle:
@@ -123,21 +146,21 @@
     mov edx, dword ptr [edi + .Lidle_status]
     jmp .Lstop
 .Lbad_interval:
-    load_iat_text .Linterval
+    load_status_text interval
     jmp .Ltoggle_status
 .Lread_interval:
     // Each start captures the interval and button; edits only affect the next start.
-    sub esp, 12
-    // The first eight bytes hold the interval text, then the timer's LARGE_INTEGER.
+    sub esp, .Ledit_space + 4
+    // The interval workspace holds both the edit text and the timer period.
     mov eax, dword ptr [ebx + .Lcookie_disp]
     xor eax, esp
-    mov dword ptr [esp + 8], eax
+    mov dword ptr [esp + .Ledit_space], eax
     push esp                       // PUSH saves the buffer address before moving ESP.
     push 7                         // Read an extra byte to reject a truncated long value.
     push 0x0d                      // WM_GETTEXT
     push IDC_INTERVAL
     push esi
-    call_import SendDlgItemMessageA
+    call_import UI_API(SendDlgItemMessage)
     dec eax
     cmp eax, 4
     ja .Lbad_interval
@@ -145,13 +168,13 @@
     xor eax, eax
     mov ebp, esp
 .Ldigit:
-    movzx edx, byte ptr [ebp]
+    movzx edx, EDIT_UNIT ptr [ebp]
     sub edx, '0'
     cmp edx, 9
     ja .Lbad_interval
     imul eax, eax, 10
     add eax, edx
-    inc ebp
+    NEXT_DIGIT(ebp)
     loop .Ldigit                   // ECX is the validated character count.
     dec eax                        // One unsigned range check rejects both zero and values over 60000.
     cmp eax, 59999
@@ -164,7 +187,7 @@
     push 2                         // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
     push 0
     push 0
-    call_import CreateWaitableTimerExA
+    call_import UI_API(CreateWaitableTimerEx)
     mov dword ptr [edi + .Ltimer], eax
     test eax, eax
     jz .Ltimer_failed
@@ -187,24 +210,29 @@
     test eax, eax
     jz .Ltimer_failed
 
+#ifdef PICOCLICKER_WIDE_DIALOG
+    push esi
+    call "_PicoSelectedButton@4"
+#else
     movzx eax, byte ptr [edi + .Lselected_button]
     load_button_flags
+#endif
     mov dword ptr [edi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // The release flag follows its press flag.
     mov dword ptr [edi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
     inc dword ptr [edi + .Lgeneration]
-    load_iat_text .Lon
+    load_status_text on
     call .Lshow_stop
     jmp .Ltoggle_return
 .Ltimer_failed:
-    load_iat_text .Ltimer_error
+    load_status_text timer_error
 .Ltoggle_status:
     call .Lstatus
 .Ltoggle_return:
-    mov ecx, dword ptr [esp + 8]
+    mov ecx, dword ptr [esp + .Ledit_space]
     xor ecx, esp
     call .Lcheck_cookie
-    add esp, 12
+    add esp, .Ledit_space + 4
     ret
 
 .att_syntax prefix

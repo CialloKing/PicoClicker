@@ -42,17 +42,22 @@
     // Timer generation and drain counter, then MSG and the /GS cookie.
     xor esi, esp
     mov dword ptr [esp + 36], esi
+#ifdef PICOCLICKER_WIDE_DIALOG
+    xor ecx, ecx
+    mov edx, IDD_MAIN
+#else
     lea edx, [ebp + .Ldialog_template@IMGREL]
     lea esi, [ebp + .Ldialog_encoding@IMGREL]
     mov edi, edx
-    decode_dialog
+    decode_dialog                  // Leaves ECX zero for the parameter and parent.
+#endif
     lea eax, [ebp + "_DialogProc@16"@IMGREL]
-    push ecx                       // A complete decode leaves the LOOP counter zero.
+    push ecx
     push eax
     push ecx
     push edx
     push ebp
-    call_import CreateDialogIndirectParamA
+    call_import CREATE_DIALOG_API
     mov esi, eax
     test eax, eax
     jz .Lui_failed
@@ -86,16 +91,23 @@
     push eax
     push eax
     push ebp
-    call_import PeekMessageA
+    call_import UI_API(PeekMessage)
     test eax, eax
     jz .Lcheck_tick
     cmp dword ptr [ebp + 4], 0x12  // WM_QUIT
     je .Lquit
-    // Translate printable keys for the edit control without dialog navigation.
+#ifdef PICOCLICKER_WIDE_DIALOG
+    push ebp
+    push esi
+    call_import IsDialogMessageW
+    test eax, eax
+    jnz .Lnext_message
+#endif
     push ebp
     call_import TranslateMessage
     push ebp
-    call_import DispatchMessageA
+    call_import UI_API(DispatchMessage)
+.Lnext_message:
     dec byte ptr [esp + 4]
     jnz .Lpeek
 
@@ -142,24 +154,24 @@
     push 1
     call_import SendInput
 .Lclick_failed:
-    load_iat_text .Lclick_error
+    load_status_text click_error
     call .Lstop
     jmp .Lagain
 
 .Lwait_failed:
     xor edx, edx
     call .Lstop
-    load_iat_text .Ltimer_error
+    load_status_text wait_error
     jmp .Lshow_error
 .Lui_failed:
-    load_iat_text .Lui_error
+    load_status_text ui_error
 .Lshow_error:
-    mov eax, offset .Ltitle
+    mov eax, offset DIALOG_TITLE
     push 0x10                      // MB_ICONERROR
     push eax
     push edx
     push esi
-    call_import MessageBoxA        // ExitProcess releases the dialog after the error.
+    call_import UI_API(MessageBox)        // ExitProcess releases the dialog after the error.
     push 1
     pop esi
     jmp .Lreturn

@@ -4,6 +4,9 @@
 
 #include "compact_cookie.h"
 #include "resource.h"
+#ifndef PICOCLICKER_ASM_RUN
+#include "dialog_controls.h"
+#endif
 
 #ifdef PICO_RESOURCE_PREFIX
 // The marker and capacity let the packer identify the unused prefix before writing resources.
@@ -24,7 +27,7 @@ struct PicoRunData
     BYTE closing;
 #endif
     HANDLE timer;
-    LPCSTR idleStatus;
+    LPCTSTR idleStatus;
     INPUT clickPair[2];
 #ifdef _M_IX86
     BYTE selectedButton;
@@ -83,24 +86,16 @@ static struct
 } capture;
 #endif
 
-static void SetControlText(HWND dialog, int id, LPCTSTR text)
-{
-    // The edit, radio buttons and text updates share one control-message import.
-    SendDlgItemMessage(dialog, id, WM_SETTEXT, 0, (LPARAM)text);
-}
-
 static void ShowRunState(HWND dialog, LPCTSTR status)
 {
 #ifdef PICOCLICKER_LITE
-    const int lastControl = IDC_RIGHT;
+    ShowLiteButton(dialog, (runState & 1) != 0);
 #else
     const int lastControl = IDC_HOTKEY;
-#endif
     // Share the two Win32 calls across the contiguous control IDs.
     for (int id = IDC_INTERVAL; id <= lastControl; ++id)
     {
         BOOL enabled = !(runState & 1);
-#ifndef PICOCLICKER_LITE
         if (id == IDC_STATUS)
         {
             continue;
@@ -113,10 +108,10 @@ static void ShowRunState(HWND dialog, LPCTSTR status)
         {
             enabled = FALSE;
         }
-#endif
         EnableWindow(GetDlgItem(dialog, id), enabled);
     }
     SetControlText(dialog, IDC_TOGGLE, (runState & 1) ? PICO_TEXT("停止", "Stop") : PICO_TEXT("开始", "Start"));
+#endif
     SetControlText(dialog, IDC_STATUS, status);
 }
 #endif
@@ -521,16 +516,7 @@ static void SelectClickPair(HWND dialog)
         MOUSEEVENTF_RIGHTUP == (MOUSEEVENTF_RIGHTDOWN << 1), "Mouse button flags");
     _Static_assert(IDC_RIGHT == IDC_MIDDLE + 1, "Mouse button control IDs");
 
-    DWORD down = MOUSEEVENTF_LEFTDOWN;
-    for (int id = IDC_MIDDLE; id <= IDC_RIGHT; ++id)
-    {
-        if (SendDlgItemMessage(dialog, id, BM_GETCHECK, 0, 0) == BST_CHECKED)
-        {
-            down = id == IDC_MIDDLE ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_RIGHTDOWN;
-            break;
-        }
-    }
-
+    DWORD down = SelectedMouseFlags(dialog);
     clickPair[0].mi.dwFlags = down;
     clickPair[1].mi.dwFlags = down << 1;
 }

@@ -1,11 +1,14 @@
-// Keep the normal Unicode resource dialog and C implementation. Resolve the
-// unbound imports through FirstThunk so the loader needs only one thunk table.
+// Both Unicode editions resolve their unbound imports through FirstThunk.
 #ifdef __i386__
 .set @feat.00, 0x801               // This object has no SEH handlers.
 #else
 .set @feat.00, 0x800
 #endif
 
+#if defined(PICOCLICKER_LITE) && defined(__x86_64__)
+// The read-only names fit after the Lite code without growing its file block.
+#define HINT_SECTION .section .text$names,"xr"
+#endif
 #include "compact_iat.inc"
 
 // Hotkey capture and its settings file are only present in the full dialog.
@@ -65,9 +68,30 @@
 .Luser_name:
     .asciz "USER32.dll"
 
+#ifdef PICOCLICKER_LITE
+#define PICOCLICKER_WIDE_DIALOG
+#define UI_API(x) x##W
+#define CREATE_DIALOG_API CreateDialogParamW
+#ifdef __i386__
+#define DIALOG_TITLE _PicoText_title
+#else
+#define DIALOG_TITLE PicoText_title
+#endif
+
+.macro load_status_text name
+#ifdef __i386__
+    mov edx, offset _PicoText_\name
+#else
+    lea rdx, [rip + PicoText_\name]
+#endif
+.endm
+
+#include "compact_loop.inc"
+#else
 .intel_syntax noprefix
 .text
 .Lguard_check_fallback:
     ret
 
 #include "compact_guard_slots.inc"
+#endif

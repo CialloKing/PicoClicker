@@ -8,11 +8,6 @@
     .error "The toggle ID must follow the mouse button IDs"
 .endif
 
-.macro button_flags
-.Lbutton_flags:
-    .byte 2, 32, 8                 // MOUSEEVENTF_*DOWN in control ID order.
-.endm
-
 // The experimental image resolves its unbound imports through FirstThunk.
 // Use the explicit .gfids list for CFG. The other calls are direct or use fixed IAT slots.
 // Make the omitted guard counts visible to pack.ps1 without allocating bytes for them.
@@ -111,9 +106,9 @@
 .Lon:          .asciz "On"
 .Ltimer_error: .asciz "Timer Err"
 
-#ifdef __i386__
-    button_flags
-#endif
+// Both callbacks index these flags from their IAT base; the cookie stays aligned.
+.Lbutton_flags:
+    .byte 2, 32, 8                 // MOUSEEVENTF_*DOWN in control ID order.
 .set .Liat_text_size, (. - .Liat_text_begin + .Lcookie_width - 1) & -.Lcookie_width
 #ifdef __i386__
 .p2align 2
@@ -130,12 +125,15 @@ __security_cookie:
 .if .Lcookie_disp < -128
     .error "The stack cookie must be within 128 bytes before the IAT base"
 .endif
-#ifdef __i386__
 .set .Lbutton_disp, .Lbutton_flags - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
 .if .Lbutton_disp < -128
     .error "Mouse button flags must be within 128 bytes before the IAT"
 .endif
-#endif
+
+.macro load_button_flags
+    // MOVZX EAX,[(E/R)BX+(E/R)AX+disp8]. LLVM reserves disp32 for the label difference.
+    .byte 0x0f, 0xb6, 0x44, 0x03, .Lbutton_disp
+.endm
 
 .macro load_iat_text name
     .set .Ltext_disp\@, \name - .Liat_text_begin - .Liat_text_size + .Lcookie_disp
@@ -197,9 +195,6 @@ __security_cookie:
 
 // The entry ends at ExitProcess. Use the padding before the CFG-aligned callback.
 .Lstop_label:  .asciz "Stop"
-#ifdef __x86_64__
-    button_flags
-#endif
 
 #ifdef __i386__
 #include "compact_dialog_x86.inc"

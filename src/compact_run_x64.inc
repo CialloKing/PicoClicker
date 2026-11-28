@@ -161,7 +161,10 @@ PicoClickerEntry:
     load_iat_text .Lui_error
 .Lshow_error:
     mov rcx, rsi
-    call .Lrun_error
+    lea r8, [rip + .Ltitle]
+    xor r9d, r9d
+    mov r9b, 0x10                  // MB_ICONERROR
+    call_import MessageBoxA
     xor esi, esi
     inc esi
     jmp .Lreturn

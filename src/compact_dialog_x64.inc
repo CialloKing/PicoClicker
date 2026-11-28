@@ -163,8 +163,7 @@ DialogProc:
     jz .Ltimer_failed
 
     movzx eax, byte ptr [rdi + .Lselected_button]
-    lea rcx, [rip + .Lbutton_flags]
-    movzx eax, byte ptr [rcx + rax]
+    load_button_flags
     mov dword ptr [rdi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // Each release flag follows its press flag.
     mov dword ptr [rdi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax
@@ -209,10 +208,5 @@ DialogProc:
     lea r8d, [r9 + 0x0c]          // WM_SETTEXT
     mov rcx, rsi
     tail_import SendDlgItemMessageA
-.Lrun_error:
-    lea r8, [rip + .Ltitle]
-    xor r9d, r9d
-    mov r9b, 0x10                  // MB_ICONERROR
-    tail_import MessageBoxA
 
 .att_syntax prefix

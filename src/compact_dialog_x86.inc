@@ -78,9 +78,7 @@
     call .Ltoggle
 .Ldialog_leave:
     popad
-    push 1
-    pop eax
-    ret 16
+    jmp .Lhandled
 // The helpers share ESI (HWND), EDI (state) and EBX (IAT).
 .Lstop:
     test byte ptr [edi + .Lgeneration], 1
@@ -190,8 +188,7 @@
     jz .Ltimer_failed
 
     movzx eax, byte ptr [edi + .Lselected_button]
-    // MOVZX EAX,[EBX+EAX+disp8], with the read-only flags next to the IAT.
-    .byte 0x0f, 0xb6, 0x44, 0x03, .Lbutton_disp
+    load_button_flags
     mov dword ptr [edi + .Lclick_pair + .Lmouse_flags], eax
     add eax, eax                   // The release flag follows its press flag.
     mov dword ptr [edi + .Lclick_pair + .Linput_size + .Lmouse_flags], eax

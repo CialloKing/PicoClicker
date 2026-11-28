@@ -156,7 +156,7 @@
     xor eax, esp
     mov dword ptr [esp + .Ledit_space], eax
     push esp                       // PUSH saves the buffer address before moving ESP.
-    push 7                         // Read an extra byte to reject a truncated long value.
+    push 7                         // Read a sixth character to detect truncation.
     push 0x0d                      // WM_GETTEXT
     push IDC_INTERVAL
     push esi

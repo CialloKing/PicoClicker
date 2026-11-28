@@ -124,7 +124,7 @@ DialogProc:
     mov rcx, rsi
     mov edx, IDC_INTERVAL
     lea r8d, [rdx + 0x0d - IDC_INTERVAL]  // WM_GETTEXT
-    lea r9d, [rdx + 7 - IDC_INTERVAL]     // Read an extra byte to detect truncation.
+    lea r9d, [rdx + 7 - IDC_INTERVAL]     // Read a sixth character to detect truncation.
     call_import UI_API(SendDlgItemMessage)
     dec eax
     cmp eax, 4

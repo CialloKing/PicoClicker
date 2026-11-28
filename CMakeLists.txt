@@ -68,7 +68,7 @@ list(APPEND link_options
     /DYNAMICBASE /NXCOMPAT /GUARD:CF
 )
 
-option(PICOCLICKER_STANDARD_LOADER_COOKIE "Also use the Windows loader's stack cookie in the full edition" OFF)
+option(PICOCLICKER_STANDARD_LOADER_COOKIE "Use the loader cookie and compact imports in the full edition" OFF)
 set(lite_targets PicoClickerLite)
 set(loader_cookie_targets)
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND

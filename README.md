@@ -36,11 +36,11 @@ cmake --build --preset release-x64
 
 每个预设都在对应的 `build/release-*` 目录生成普通版 `PicoClicker.exe` 和极限精简版 `PicoClicker-Lite.exe`。单独构建时，可在构建命令末尾加 `--target PicoClicker` 或 `--target PicoClickerLite`。
 
-使用 clang-cl 和 LLD 时，Lite 由 Windows 加载器初始化栈保护 Cookie，并共用导入查找表与地址表。也可在单独的构建目录中对普通版启用加载器 Cookie。x86 构建使用对应的预设和目录名。
+两个发布预设均由 Windows 加载器初始化普通版和 Lite 的栈保护 Cookie，并让每个 DLL 共用一张导入查找表和地址表。需要比较普通版的 CRT 初始化路径时，可以在独立目录构建。x86 使用对应的预设和目录名。
 
 ```bat
-cmake --preset release-x64 -B build/loader-cookie-x64 -DPICOCLICKER_STANDARD_LOADER_COOKIE=ON
-cmake --build build/loader-cookie-x64
+cmake --preset release-x64 -B build/crt-cookie-x64 -DPICOCLICKER_STANDARD_LOADER_COOKIE=OFF
+cmake --build build/crt-cookie-x64 --target PicoClicker
 ```
 
 ### 实验性极简版
@@ -60,14 +60,14 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 
 实验版由 Windows 加载器初始化栈保护 Cookie，用同一张表查找和接收导入地址。两种架构都用手写汇编处理窗口回调、等待和点击，x64 带有异常展开信息。打包会裁掉磁盘上最后一个节的填充，并可将部分导入名称和重定位表放入 PE 文件头或代码节的填充区。部分 Windows 版本或 PE 工具可能拒绝该布局。使用 LLVM 22.1.8 的 `llvm-readobj` 检查导入表和重定位时，可读取 `PicoClicker-Experimental-linked.exe`。[Microsoft PE 格式规范](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
 
-| 架构 | 打包后的 Lite | 实验性极简版 |
-| --- | ---: | ---: |
-| x86 | 3,584 字节 | 2,042 字节 |
-| x64 | 4,096 字节 | 2,441 字节 |
-
-两种架构均在 Windows 10 22H2 上直接使用成品验证了普通权限启动、实际点击、运行中编辑、F1 启停、导入地址、加载器写入的 Cookie 和节区权限。[本轮体积分析](docs/size-analysis-v0.4.5.md#v0416-的-x64-优化)
-
 ## 本地候选
+
+当前源码使用 clang-cl 22.1.8 和 LLD 生成的打包体积如下。
+
+| 架构 | 普通版 | Lite | 实验性极简版 |
+| --- | ---: | ---: | ---: |
+| x86 | 6,144 字节 | 3,584 字节 | 2,038 字节 |
+| x64 | 7,168 字节 | 4,096 字节 | 2,421 字节 |
 
 两种架构构建完成后，在仓库根目录运行打包脚本。发布说明可以附上实测记录。
 
@@ -75,7 +75,7 @@ cmake --build --preset release-x64 --target PicoClickerExperimental
 .\scripts\pack.ps1 -VerificationReport '本地验收记录.md'
 ```
 
-打包时，脚本将重定位表原样搬入只读数据节。Lite 在该节放不下时可以使用代码节的现有填充空间。极限精简版和普通版 x64 在链接时为资源树预留空间，打包后窗口和清单位于 PE 的 `.rsrc` 节首。修改窗口资源或清单后，应重新核对预留大小和成品体积。
+发布预设在链接普通版和 Lite 时为资源树预留空间，打包后窗口和清单位于 PE 的 `.rsrc` 节首。脚本将重定位表原样搬入只读数据节。Lite 在该节放不下时可以使用代码节的现有填充空间。修改窗口资源或清单后，应重新核对预留大小和成品体积。
 
 两个 x64 版本在使用 clang-cl 和 LLD 时都采用紧凑 PE 加载配置。打包脚本会分别检查两个版本的保护标志和链接映射。各项优化的实测收益见[反汇编体积分析](docs/size-analysis-v0.4.5.md)。
 

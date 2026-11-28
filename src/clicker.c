@@ -310,7 +310,7 @@ static BOOL SaveHotkey(void)
     }
 
     ++length;
-    // The stack-cookie startup already imports this counter.
+    // Vary temporary names across saves in one process. CREATE_NEW rejects collisions.
     LARGE_INTEGER counter;
     DWORD suffix = GetCurrentProcessId();
     if (QueryPerformanceCounter(&counter))

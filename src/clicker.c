@@ -210,7 +210,7 @@ static void ShowHotkey(HWND dialog)
 
 static BOOL IsMainKey(UINT key)
 {
-#ifdef _M_X64
+#if defined(_M_X64) || (defined(_M_IX86) && defined(PICOCLICKER_LOADER_COOKIE))
     // BT indexes all 256 virtual keys. A set bit lets polling and queued messages accept the same keys.
 #define KEY_BIT(vk) (1u << ((vk) & 31u))
     static const LONG mainKeys[] =
@@ -228,7 +228,7 @@ static BOOL IsMainKey(UINT key)
 #undef KEY_BIT
     return key < 256 && _bittest(mainKeys, (LONG)key);
 #else
-    // On x86 the range checks leave room for relocations in the read-only section.
+    // The x86 CRT build needs the read-only space for relocations.
     return key >= VK_BACK && key <= 0xfe &&
         (key < VK_SHIFT || key > VK_MENU) && (key < VK_LWIN || key > VK_RWIN) &&
         (key < VK_LSHIFT || key > VK_RMENU) && key != VK_PROCESSKEY && key != VK_PACKET;

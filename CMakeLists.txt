@@ -73,10 +73,11 @@ set(lite_targets PicoClickerLite)
 set(loader_cookie_targets)
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD" AND
     CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "^(X86|x64)$")
-    set(compact_lite TRUE)
+    set(compact_import_targets PicoClickerLite)
     list(APPEND loader_cookie_targets PicoClickerLite)
     if(PICOCLICKER_STANDARD_LOADER_COOKIE)
         list(APPEND loader_cookie_targets PicoClicker)
+        list(APPEND compact_import_targets PicoClicker)
     endif()
     find_program(PICOCLICKER_POWERSHELL NAMES pwsh powershell)
     if(PICOCLICKER_POWERSHELL)
@@ -102,14 +103,15 @@ foreach(clicker IN LISTS clicker_targets)
     else()
         target_sources(${clicker} PRIVATE src/clicker.rc)
         target_compile_definitions(${clicker} PRIVATE UNICODE _UNICODE)
-        if(NOT compact_lite OR NOT clicker STREQUAL "PicoClickerLite")
+        if(NOT clicker IN_LIST compact_import_targets)
             target_link_libraries(${clicker} PRIVATE kernel32 user32)
         endif()
     endif()
     target_compile_options(${clicker} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${compile_options}>")
     target_link_options(${clicker} PRIVATE ${link_options})
     if(merge_pdata)
-        if(clicker STREQUAL "PicoClickerExperimentalImage")
+        if(clicker STREQUAL "PicoClickerExperimentalImage" OR
+            (clicker STREQUAL "PicoClicker" AND PICOCLICKER_STANDARD_LOADER_COOKIE))
             # Fit the runtime function table and unwind records in the .text alignment space.
             target_link_options(${clicker} PRIVATE /MERGE:.pdata=.text /MERGE:.xdata=.text)
         else()
@@ -136,6 +138,17 @@ if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_LINKER_TYPE STREQUAL "LLD")
             target_sources(${clicker} PRIVATE src/compact_load_config.c)
         endforeach()
         target_link_options(PicoClickerLite PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
+        if(PICOCLICKER_STANDARD_LOADER_COOKIE)
+            target_compile_definitions(PicoClicker PRIVATE PICO_RESOURCE_PREFIX=792)
+            target_link_options(PicoClicker PRIVATE /INCLUDE:_PicoResourcePrefix /MERGE:.rdata=.rpack)
+            # The x86 message loop is generated during LTO. Pass the size settings to LLD.
+            include(CheckLinkerFlag)
+            set(dialog_lto_flags /mllvm:-disable-machine-licm /mllvm:-x86-br-merging-base-cost=-1)
+            check_linker_flag(C "${dialog_lto_flags}" PICO_HAVE_DIALOG_LTO_FLAGS)
+            if(PICO_HAVE_DIALOG_LTO_FLAGS)
+                target_link_options(PicoClicker PRIVATE ${dialog_lto_flags})
+            endif()
+        endif()
     elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
         # In the full dialog, branching directly and loading imports at the call sites
         # saves registers and shortens the message loop. LLVM's private flags can vary by version.
@@ -174,7 +187,7 @@ foreach(clicker IN LISTS loader_cookie_targets)
     target_link_options(${clicker} PRIVATE /SUBSYSTEM:WINDOWS,6.03)
 endforeach()
 
-if(compact_lite)
+if(compact_import_targets)
     # An omitted compact import must fail at link time.
     set(CMAKE_C_STANDARD_LIBRARIES "")
     get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -187,18 +200,25 @@ if(compact_lite)
     else()
         set(import_triple x86_64-pc-windows-msvc)
     endif()
-    set(lite_import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_lite_imports.S")
-    set(lite_import_object "${assembly_dir}/PicoClicker-LiteImports.obj")
-    add_custom_command(
-        OUTPUT "${lite_import_object}"
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${assembly_dir}"
-        COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c
-            "/Fo${lite_import_object}" "${lite_import_source}"
-        DEPENDS "${lite_import_source}" src/compact_iat.inc src/compact_guard_slots.inc
-        VERBATIM
-    )
-    target_sources(PicoClickerLite PRIVATE "${lite_import_object}")
-    target_link_options(PicoClickerLite PRIVATE /INCLUDE:PicoImportDescriptors)
+    set(unicode_import_source "${CMAKE_CURRENT_SOURCE_DIR}/src/compact_unicode_imports.S")
+    foreach(clicker IN LISTS compact_import_targets)
+        set(import_define)
+        if(clicker STREQUAL "PicoClickerLite")
+            set(import_define /DPICOCLICKER_LITE)
+        endif()
+        set(import_stem "${assembly_dir}/${clicker}Imports")
+        add_custom_command(
+            OUTPUT "${import_stem}.obj"
+            BYPRODUCTS "${import_stem}.asm"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${assembly_dir}"
+            COMMAND "${CMAKE_C_COMPILER}" "--target=${import_triple}" /nologo /c ${import_define}
+                "/Fo${import_stem}.obj" "/Fa${import_stem}.asm" "${unicode_import_source}"
+            DEPENDS "${unicode_import_source}" src/compact_iat.inc src/compact_guard_slots.inc
+            VERBATIM
+        )
+        target_sources(${clicker} PRIVATE "${import_stem}.obj")
+        target_link_options(${clicker} PRIVATE /INCLUDE:PicoImportDescriptors)
+    endforeach()
 endif()
 
 if(TARGET PicoClickerExperimentalImage)
